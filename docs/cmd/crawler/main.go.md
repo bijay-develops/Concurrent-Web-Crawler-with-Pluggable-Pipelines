@@ -54,18 +54,15 @@
 ## 6. Mermaid Diagrams
 ```mermaid
 flowchart TD
-    A[Start main] --> B[Create cancellable context]
-    B --> C[Set up signal chan & Notify]
-    C --> D[Start goroutine
-waiting for SIGINT/SIGTERM]
-    D --> E[On signal:
-log and cancel ctx]
-    C --> F[Build crawler.Config
-WoekerCount=8]
-    F --> G[Call crawler.New(cfg)]
-    G --> H[c.Run(ctx)]
-    H --> I[Log error if any]
-    I --> J[Sleep 100ms and exit]
+  A["Start main"] --> B["Create cancellable context"]
+  B --> C["Set up signal handling"]
+  C --> D["Start goroutine waiting for signal"]
+  D --> E["On signal, log and cancel context"]
+  C --> F["Build crawler config, worker count 8"]
+  F --> G["Create crawler with New"]
+  G --> H["Run crawler with Run"]
+  H --> I["Log error if any"]
+  I --> J["Sleep briefly and exit"]
 ```
 
 ## 7. Error Handling & Edge Cases
