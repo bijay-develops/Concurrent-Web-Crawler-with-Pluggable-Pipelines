@@ -19,7 +19,19 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		
+		sig := <-sigCh
+		log.Printf("Received signal: %s, shutting down", sig)
+		cancel()
+	}()
+
+	cfg := crawler.Config{
+		WoekerCount: 8,
+	}
+
+	c := crawler.New(cfg)
+
+	if err := c.Run(ctx); err != nil {
+		log.Printf("crawler exited with error: %v", err)
 	}
 
 	//optional: bounded wait for cleanup
