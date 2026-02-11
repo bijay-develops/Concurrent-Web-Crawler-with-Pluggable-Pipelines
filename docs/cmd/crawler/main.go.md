@@ -26,6 +26,14 @@
 - `time.Sleep(100 * time.Millisecond)`
   - Optional short delay after shutdown to allow any asynchronous cleanup to finish.
 
+### Why this is idiomatic
+- context.Context is rooted in main
+- Signals only cancel context — they don’t “do work”
+- No global state
+- No os.Exit
+
+#### ⚠️ Interview red flag: doing cleanup inside the signal handler.
+
 ## 4. Execution Flow
 1. Create a root context with cancellation capability.
 2. Initialize an OS signal channel and register for `SIGINT` and `SIGTERM`.
