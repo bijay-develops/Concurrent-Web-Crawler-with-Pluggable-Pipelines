@@ -23,8 +23,8 @@ func crawl(urls []string) {
 }
 ```
 
-❌ Slow
-❌ No parallelism
+❌ Slow <br>
+❌ No parallelism <br>
 ❌ Blocks on network I/O
 
 ---
