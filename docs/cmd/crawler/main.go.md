@@ -18,7 +18,8 @@
 - Goroutine reading from `sigCh`
   - Logs the received signal and invokes `cancel()` to propagate shutdown via the context.
 - `crawler.Config{ WoekerCount: 8 }`
-  - Configuration struct (defined in `internal/crawler`, not yet implemented) specifying crawler parameters such as worker count.
+  - Configuration struct from `internal/crawler` specifying crawler parameters such as worker count.
+  - Note: The code currently uses the field name `WoekerCount` in `main.go`, while `Config` defines `WorkerCount`. This mismatch should be corrected in code; the intent is a worker count field.
 - `crawler.New(cfg)`
   - Factory function (expected in `internal/crawler`) that constructs a new crawler instance from the config.
 - `c.Run(ctx)`

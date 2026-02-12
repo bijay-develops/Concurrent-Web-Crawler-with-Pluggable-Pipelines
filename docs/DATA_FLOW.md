@@ -2,27 +2,29 @@
 
 ## Overview
 - The project is structured as a concurrent web crawler with pluggable pipeline stages.
-- Most internal implementation is not yet present; this document describes the intended data flow suggested by file and package names.
+- Core control flow and scheduling are implemented; pipeline stages are present as structural placeholders that will be wired in.
 
 ## End-to-End Flow (Conceptual)
 - **Inputs**
   - Crawl jobs (e.g., URLs or resources to fetch), provided to the crawler by higher-level code or configuration.
 - **Processing**
-  - Core crawler receives jobs and passes them through a scheduler.
-  - Pipeline stages process each item sequentially: fetch → filter → parse → store.
+  - Core crawler receives jobs and passes them through a scheduler that deduplicates URLs.
+  - Pipeline stages process each item conceptually in sequence: discover → fetch → filter → parse → store, with limiting where appropriate.
 - **Outputs**
   - Processed items and stored results (exact format and destination are not yet implemented).
 
 ## Mermaid Data Flow Diagram
 ```mermaid
 flowchart LR
-    A[Input crawl jobs] --> B[Core crawler<br/>(internal/crawler)]
-    B --> C[Scheduler<br/>(scheduler.go, planned)]
-    C --> D[Fetch stage<br/>(fetch.go, planned)]
-    D --> E[Filter stage<br/>(filter.go, planned)]
-    E --> F[Parse stage<br/>(parse.go, planned)]
-    F --> G[Store stage<br/>(store.go, planned)]
-    G --> H[Outputs<br/>(stored results)]
+  A[Input crawl jobs] --> B[Core crawler<br/>(internal/crawler)]
+  B --> C[Scheduler<br/>(scheduler.go)]
+  C --> D[Discover stage<br/>(discover.go)]
+  D --> E[Fetch stage<br/>(fetch.go)]
+  E --> F[Filter stage<br/>(filter.go)]
+  F --> G[Parse stage<br/>(parse.go)]
+  G --> H[Store stage<br/>(store.go)]
+  H --> I[Limiter<br/>(limiter.go, optional)]
+  I --> J[Outputs<br/>(stored results)]
 ```
 
 ## External Dependencies

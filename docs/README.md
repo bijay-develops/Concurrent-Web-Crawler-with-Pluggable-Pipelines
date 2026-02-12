@@ -5,21 +5,28 @@ This `docs/` directory contains structured documentation for the crawler project
 ## Index
 
 ### Project-Level Docs
+
 - [ARCHITECTURE](ARCHITECTURE.md) – overall system structure and module interactions.
 - [DATA_FLOW](DATA_FLOW.md) – conceptual end-to-end data flow and pipeline stages.
 
 ### Source File Docs
+
 - [go.mod](go.mod.md)
 - [cmd/crawler/main.go](cmd/crawler/main.go.md)
 - [internal/crawler/crawler.go](internal/crawler/crawler.go.md)
 - [internal/crawler/item.go](internal/crawler/item.go.md)
 - [internal/crawler/scheduler.go](internal/crawler/scheduler.go.md)
+ - [internal/crawler/work.go](internal/crawler/work.go.md)
 - [internal/pipeline/fetch.go](internal/pipeline/fetch.go.md)
 - [internal/pipeline/filter.go](internal/pipeline/filter.go.md)
 - [internal/pipeline/parse.go](internal/pipeline/parse.go.md)
 - [internal/pipeline/store.go](internal/pipeline/store.go.md)
+ - [internal/pipeline/discover.go](internal/pipeline/discover.go.md)
+ - [internal/pipeline/interfaces.go](internal/pipeline/interfaces.go.md)
+ - [internal/pipeline/limiter.go](internal/pipeline/limiter.go.md)
 
 ## How to Navigate
+
 - Use the links above to jump to documentation for a specific source file.
 - Each file-level document follows a consistent structure:
   1. Overview
