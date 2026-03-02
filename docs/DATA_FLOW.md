@@ -32,4 +32,5 @@ flowchart LR
 
 ## External Dependencies
 - Standard library packages used in the entrypoint (`context`, `os/signal`, `syscall`, `time`, `log`).
-- No external network or storage dependencies are defined in code yet; these will likely be introduced inside the empty `internal/*` files as the implementation evolves.
+- Standard library networking used in the pipeline (`net/http`).
+- No external storage dependencies are defined in code yet; these will likely be introduced as the pipeline stages evolve.

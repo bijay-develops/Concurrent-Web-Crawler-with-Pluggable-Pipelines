@@ -2,18 +2,16 @@
 
 ## 1. Overview
 - Purpose: Declare the Go module for the crawler project and manage dependencies.
-- Current state: The `crawler/go.mod` file exists but is empty in this snapshot of the repository.
-- High-level responsibility: Once populated, it will define the module path and any required dependencies.
+- Current state: The `crawler/go.mod` file declares the module path and Go version.
+- High-level responsibility: Define the module path and Go version for the crawler code.
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/go.mod`
 
 ## 3. Key Components
-- Module declaration (planned): `module <module-path>`.
-- Go version (planned): `go <version>`.
-- Require and replace directives (planned) for external dependencies.
-
-As of now, none of these components are present in the file.
+- Module declaration: `module crawler`.
+- Go version: `go 1.25`.
+- No `require` or `replace` directives are currently present.
 
 ## 4. Execution Flow
 - `go.mod` is not executed directly; it is consumed by the Go toolchain.
@@ -34,8 +32,8 @@ flowchart TD
 ```
 
 ## 7. Error Handling & Edge Cases
-- With an empty `go.mod`, module-aware commands may fail or treat the project as not fully configured.
-- Once content is added, common errors include invalid module paths, incompatible Go versions, and missing dependencies.
+- With only a module path and Go version, the project builds as long as it has no external dependencies.
+- Once dependencies are added, common errors include invalid module paths, incompatible Go versions, and missing or conflicting dependency versions.
 
 ## 8. Example Usage
 - Initialize the module (once you decide on a module path):

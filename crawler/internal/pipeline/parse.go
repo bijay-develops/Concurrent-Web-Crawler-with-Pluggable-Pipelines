@@ -25,7 +25,7 @@ func ParseWorker(
 			select {
 			case out <- item:
 			case <-ctx.Done():
-				return 
+				return
 			}
 		}
 	}
