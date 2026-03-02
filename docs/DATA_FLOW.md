@@ -2,21 +2,24 @@
 
 ## Overview
 - The project is structured as a concurrent web crawler with pluggable pipeline stages.
-- Core control flow and scheduling are implemented; pipeline stages are present as structural placeholders that will be wired in.
+- Core control flow, scheduling, and concurrency wiring are implemented in `internal/crawler`.
+- Pipeline stage files in `internal/pipeline` mostly describe intended behavior; their concrete logic is still evolving.
 
 ## End-to-End Flow (Conceptual)
 - **Inputs**
-  - Crawl jobs (e.g., URLs or resources to fetch), provided to the crawler by higher-level code or configuration.
+  - Seed URLs provided by the crawler itself (currently a hard-coded `https://example.com`) or, in the future, by higher-level configuration.
 - **Processing**
-  - Core crawler receives jobs and passes them through a scheduler that deduplicates URLs.
-  - Pipeline stages process each item conceptually in sequence: discover → fetch → filter → parse → store, with limiting where appropriate.
+  - The core crawler creates channels for each stage (seeds, scheduled, fetched, parsed, discovered).
+  - A `Schedular` instance deduplicates URLs and forwards unique items.
+  - A pool of fetch workers (size controlled by `WithWorkerCount`) pulls from the scheduled channel and writes to the fetched channel.
+  - Downstream stages conceptually process items in sequence: discover → fetch → filter → parse → store, with limiting where appropriate and depth bounded by `maxDepth`.
 - **Outputs**
-  - Processed items and stored results (exact format and destination are not yet implemented).
+  - Discovered items and any stored results (the storage format/destination is not yet implemented).
 
 ## Mermaid Data Flow Diagram
 ```mermaid
 flowchart LR
-  A[Input crawl jobs] --> B[Core crawler<br/>(internal/crawler)]
+  A[Seed URLs / input jobs] --> B[Core crawler<br/>(internal/crawler)]
   B --> C[Scheduler<br/>(scheduler.go)]
   C --> D[Discover stage<br/>(discover.go)]
   D --> E[Fetch stage<br/>(fetch.go)]

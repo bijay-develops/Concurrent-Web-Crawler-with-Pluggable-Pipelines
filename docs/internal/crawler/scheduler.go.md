@@ -13,24 +13,23 @@
   - Holds a `seen` map from URL string to empty struct and a `sync.Mutex` `mu` to guard concurrent access.
 - `func NewSchedular() *Schedular`
   - Constructor that initializes the `seen` map.
-- `func (s *Schedular) Seen(u string) bool`
-  - Checks if a URL string has been seen; if not, records it as seen.
-  - Returns `true` if the URL was already present, `false` otherwise.
-- `func (s *Schedular) Run(ctx context.Context, in <-chan Item, out chan<- Item)`
+- `func (s *Schedular) Schedule(ctx context.Context, in <-chan Item, out chan<- Item)`
   - Main scheduling loop.
   - Listens on the input channel and forwards only unseen items to the output channel, respecting context cancellation.
 
 ## 4. Execution Flow
 1. A `Schedular` instance is created via `NewSchedular`.
 2. `Run` is invoked with a context, an input channel of `Item`, and an output channel of `Item`.
-3. Inside an infinite loop, `Run` selects on:
+3. Inside an infinite loop, `Schedule` selects on:
    - `ctx.Done()`: exits immediately when the context is canceled.
    - `in` channel:
      - If the channel is closed (`ok == false`), `Run` returns.
      - Otherwise, it receives an `Item`.
-4. For each received item, `Run` calls `s.Seen(item.URL.String())`:
-   - If `Seen` returns `true`, the item is discarded.
-   - If `Seen` returns `false`, the item is sent to `out`.
+4. For each received item, `Schedule`:
+  - Converts `item.URL` to a string key.
+  - Checks and updates the `seen` map under the mutex.
+  - Discards items whose URL has already been seen.
+  - Sends unseen items to `out`, again respecting context cancellation.
 
 ## 5. Data Flow
 - **Inputs**
@@ -53,7 +52,7 @@ flowchart TD
   A["Item from in channel"] --> B["Check Seen(URL)"]
   B -->|already seen| C["Discard item"]
   B -->|new URL| D["Forward to out channel"]
-  E["Context canceled or input closed"] --> F["Exit Run"]
+  E["Context canceled or input closed"] --> F["Exit Schedule"]
 ```
 
 ## 7. Error Handling & Edge Cases

@@ -5,21 +5,21 @@ import (
 	"sync"
 )
 
-// Schedular is responsible for scheduling items to be processed by the crawler while ensuring that duplicate URLs are not processed multiple times.
-type Schedular struct {
+// Scheduler is responsible for scheduling items to be processed by the crawler while ensuring that duplicate URLs are not processed multiple times.
+type Scheduler struct {
 	mu   sync.Mutex
 	seen map[string]struct{}
 }
 
-// NewSchedular creates a new Schedular instance with an initialized seen map.
-func NewSchedular() *Schedular {
-	return &Schedular{
+// NewScheduler creates a new Scheduler instance with an initialized seen map.
+func NewScheduler() *Scheduler {
+	return &Scheduler{
 		seen: make(map[string]struct{}),
 	}
 }
 
 // Schedule reads items from the input channel, checks for duplicates, and sends unique items to the output channel.
-func (s *Schedular) Schedule(ctx context.Context, in <-chan Item, out chan<- Item) {
+func (s *Scheduler) Schedule(ctx context.Context, in <-chan Item, out chan<- Item) {
 	for {
 		// Use a select statement to handle context cancellation and channel input simultaneously.
 		select {

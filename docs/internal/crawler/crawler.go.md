@@ -1,69 +1,97 @@
 # internal/crawler/crawler.go
 
 ## 1. Overview
-- Purpose: Define the core `Crawler` type, its configuration, and the main `Run` loop.
-- Problem it solves: Provides a single entrypoint for running the crawler under a `context.Context`, validating configuration up front.
-- High-level responsibility: Hold configuration, construct crawler instances, and block until the context is canceled.
+- Purpose: Define the core `Crawler` type, its configuration via functional options, and the main `Run` loop.
+- Problem it solves: Provides a single entrypoint for running a concurrent crawler under a `context.Context`, wiring together workers, scheduler, and pipeline channels.
+- High-level responsibility: Hold configuration (worker count, max depth), construct crawler instances, and orchestrate the crawl until the context is canceled.
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/internal/crawler/crawler.go`
 
 ## 3. Key Components
-- `type Config struct { WorkerCount int }`
-	- Configuration for the crawler; currently only a worker count.
-- `type Crawler struct { cfg Config }`
-	- Concrete crawler type that stores the effective configuration.
-- `func New(cfg Config) *Crawler`
-	- Constructor that wraps the provided configuration in a new `Crawler` instance.
+- `type Crawler struct { workers int; maxDepth int }`
+	- Holds crawler configuration:
+	  - `workers`: number of concurrent fetch workers.
+	  - `maxDepth`: maximum crawl depth from the initial seed URLs.
+- `type Option func(*Crawler)`
+	- Functional option type used to configure a `Crawler` at construction time.
+- `func WithWorkerCount(n int) Option`
+	- Configures the number of concurrent workers.
+- `func WithMaxDepth(d int) Option`
+	- Configures the maximum crawl depth.
+- `func New(opts ...Option) *Crawler`
+	- Constructor that applies options to a `Crawler`.
+	- Defaults: `workers = 4`, `maxDepth = 1` if not overridden.
 - `func (c *Crawler) Run(ctx context.Context) error`
-	- Validates configuration (`WorkerCount` must be > 0).
-	- Blocks until `ctx.Done()` is signaled.
-	- Returns `ctx.Err()` when the context is canceled or times out.
+	- Validates configuration (`workers` must be > 0).
+	- Constructs channels for each stage: `seeds`, `scheduled`, `fetched`, `parsed`, `discovered`.
+	- Creates a scheduler and runs it.
+	- Creates an HTTP client and domain limiter from `internal/pipeline`.
+	- Starts a pool of fetch workers.
+	- Starts parse and discover workers and wires them with channels.
+	- Uses a `WorkTracker` to know when all work is done and trigger cancellation.
+	- Seeds the crawl with a hard-coded `https://example.com` URL at depth 0.
+	- Blocks on `<-ctx.Done()` and returns `ctx.Err()`.
 
 ## 4. Execution Flow
-1. Call `New(cfg)` with a `Config` value to create a `Crawler`.
+1. Construct a `Crawler` using `New`, optionally passing `WithWorkerCount` and `WithMaxDepth`.
 2. Call `Run(ctx)` on the returned crawler instance.
 3. Inside `Run`:
-	 - If `cfg.WorkerCount <= 0`, return an error immediately.
-	 - Otherwise, wait on `<-ctx.Done()`.
-	 - When the context is canceled, return `ctx.Err()`.
+	- If `workers <= 0`, return an error immediately.
+	- Create a `WorkTracker` and derive a cancellable context.
+	- Initialize channels: `seeds`, `scheduled`, `fetched`, `parsed`, `discovered`.
+	- Create a `Schedular` and run its scheduling loop.
+	- Create an HTTP client and domain limiter via the `pipeline` package.
+	- Start `workers` number of fetch goroutines and wait for them via a `sync.WaitGroup`.
+	- Start parse and discover workers to process fetched and parsed items.
+	- Start a goroutine that waits on the `WorkTracker` and cancels the context when all work is done.
+	- Seed the `seeds` channel with an initial URL and depth 0, incrementing the tracker.
+	- Block until the context is done, then return `ctx.Err()`.
 
 ## 5. Data Flow
 - **Inputs**
-	- `Config` provided to `New`.
+	- Functional options (`WithWorkerCount`, `WithMaxDepth`) provided to `New`.
 	- `ctx context.Context` provided to `Run`.
 - **Processing steps**
 	- Validate configuration (worker count must be positive).
-	- Block until context completion.
+	- Set up channels, scheduler, workers, and pipeline wiring.
+	- Seed the crawl and track outstanding work via `WorkTracker`.
+	- Cancel the internal context when all work is done or when the parent context is canceled.
 - **Outputs**
 	- An `error` from `Run`: either a configuration error or the context error.
+	- Side-effectful work performed by pipeline workers (fetching, parsing, discovering) as they are implemented.
 - **Dependencies**
-	- `context` from the standard library.
-	- `errors` from the standard library.
+	- `context`, `errors`, `net/url`, `sync`, `time` from the standard library.
+	- Internal packages: `internal/crawler` (for `WorkTracker`, `Schedular`, `Item`) and `internal/pipeline` for HTTP client, limiter, and workers.
 
 ## 6. Mermaid Diagrams
 ```mermaid
 flowchart TD
-	A["New(Config)"] --> B["Create Crawler with cfg"]
+	A["New(WithWorkerCount, WithMaxDepth)"] --> B["Create Crawler with workers, maxDepth"]
 	B --> C["Run(ctx)"]
-	C --> D{"WorkerCount > 0?"}
+	C --> D{"workers > 0?"}
 	D -->|no| E["Return config error"]
-	D -->|yes| F["Wait for ctx.Done()"]
-	F --> G["Return ctx.Err()"]
+	D -->|yes| F["Set up channels, scheduler, workers"]
+	F --> G["Seed initial URL and track work"]
+	G --> H["Wait for ctx.Done() or tracker"]
+	H --> I["Return ctx.Err()"]
 ```
 
 ## 7. Error Handling & Edge Cases
-- If `WorkerCount <= 0`, `Run` returns `errors.New("worker count must be > 0")` immediately.
-- If the context is never canceled, `Run` blocks indefinitely.
+- If `workers <= 0`, `Run` returns `errors.New("worker count must be > 0")` immediately.
+- If the context is never canceled and the tracker never reaches zero, `Run` will continue to block.
 - When the context is canceled or times out, `Run` returns `ctx.Err()` (e.g., `context.Canceled` or `context.DeadlineExceeded`).
+- The initial seed URL is currently hard-coded; misconfiguration at the pipeline level may surface as errors when stages are implemented.
 
 ## 8. Example Usage
 ```go
-cfg := crawler.Config{WorkerCount: 8}
-c := crawler.New(cfg)
+c := crawler.New(
+	crawler.WithWorkerCount(8),
+	crawler.WithMaxDepth(3),
+)
 
 if err := c.Run(ctx); err != nil {
-		log.Printf("crawler exited: %v", err)
+	log.Printf("crawler exited: %v", err)
 }
 ```
 

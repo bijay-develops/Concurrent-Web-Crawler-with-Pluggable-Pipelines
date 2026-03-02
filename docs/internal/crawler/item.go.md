@@ -9,9 +9,10 @@
 - Relative path (from repo root): `crawler/internal/crawler/item.go`
 
 ## 3. Key Components
-- `type Item struct { URL *url.URL; Depth int }`
+- `type Item struct { URL *url.URL; Depth int; Response *http.Response }`
 	- `URL *url.URL`: Pointer to a parsed URL for the item.
 	- `Depth int`: Current depth of this item in the crawl (e.g., starting URL at depth 0).
+	- `Response *http.Response`: The HTTP response associated with this item once fetched (may be nil before fetching).
 
 ## 4. Execution Flow
 - `Item` is a data container and does not define its own control flow.
@@ -25,7 +26,7 @@
 - **Outputs**
 	- `Item` values flowing between internal components.
 - **Dependencies**
-	- `net/url` from the standard library.
+	- `net/url` and `net/http` from the standard library.
 
 ## 6. Mermaid Diagrams
 ```mermaid
@@ -42,6 +43,7 @@ flowchart LR
 ```go
 u, _ := url.Parse("https://example.com")
 item := crawler.Item{URL: u, Depth: 0}
+// Response is populated by fetch workers in the pipeline.
 ```
 
 ### Notes

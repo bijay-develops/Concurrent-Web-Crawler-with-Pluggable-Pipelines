@@ -13,19 +13,16 @@
   - Application entrypoint; orchestrates the overall start and shutdown sequence.
 - `context.WithCancel(context.Background())`
   - Creates a cancellable context used to control the lifetime of the crawler.
-- `sigCh := make(chan os.Signal, 1)` and `signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)`
+- `sig := make(chan os.Signal, 1)` and `signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)`
   - Channel and subscription used to listen for termination signals (Ctrl+C, system shutdown).
-- Goroutine reading from `sigCh`
-  - Logs the received signal and invokes `cancel()` to propagate shutdown via the context.
-- `crawler.Config{ WoekerCount: 8 }`
-  - Configuration struct from `internal/crawler` specifying crawler parameters such as worker count.
-  - Note: The code currently uses the field name `WoekerCount` in `main.go`, while `Config` defines `WorkerCount`. This mismatch should be corrected in code; the intent is a worker count field.
-- `crawler.New(cfg)`
-  - Factory function (expected in `internal/crawler`) that constructs a new crawler instance from the config.
+- Goroutine reading from `sig`
+  - Logs a shutdown message and invokes `cancel()` to propagate shutdown via the context.
+- `crawler.New(crawler.WithWorkerCount(8), crawler.WithMaxDepth(3))`
+  - Uses functional options from `internal/crawler` to configure the crawler instance.
+  - `WithWorkerCount(8)` sets the number of concurrent fetch workers.
+  - `WithMaxDepth(3)` bounds the crawl depth from the initial seeds.
 - `c.Run(ctx)`
-  - Starts the crawler using the provided context; returns an error if the crawler exits unexpectedly.
-- `time.Sleep(100 * time.Millisecond)`
-  - Optional short delay after shutdown to allow any asynchronous cleanup to finish.
+  - Starts the crawler using the provided context; returns an error when the context is canceled or if it aborts early.
 
 ### Why this is idiomatic
 - context.Context is rooted in main
@@ -39,11 +36,9 @@
 1. Create a root context with cancellation capability.
 2. Initialize an OS signal channel and register for `SIGINT` and `SIGTERM`.
 3. Start a goroutine that waits for a signal, logs it, and cancels the context.
-4. Build a `crawler.Config` with a worker count of 8.
-5. Call `crawler.New(cfg)` to obtain a crawler instance.
-6. Invoke `c.Run(ctx)` to start the crawler and block until it returns.
-7. Log any error returned by `c.Run`.
-8. Sleep briefly to allow in-flight cleanup before process exit.
+4. Construct a crawler instance via `crawler.New`, passing `WithWorkerCount` and `WithMaxDepth` options.
+5. Invoke `c.Run(ctx)` to start the crawler and block until it returns.
+6. Log any error returned by `c.Run`.
 
 ## 5. Data Flow
 - **Inputs**
@@ -57,8 +52,8 @@
   - Logs for shutdown signals and crawler exit errors.
   - Cancellation propagated through the context to downstream components.
 - **Dependencies**
-  - Standard library: `context`, `log`, `os`, `os/signal`, `syscall`, `time`.
-  - Internal module: `crawler/internal/crawler` (for `Config`, `New`, and `Run`).
+  - Standard library: `context`, `log`, `os`, `os/signal`, `syscall`.
+  - Internal module: `crawler/internal/crawler` (for `New`, `WithWorkerCount`, `WithMaxDepth`, and `Run`).
 
 ## 6. Mermaid Diagrams
 ```mermaid
@@ -67,7 +62,7 @@ flowchart TD
   B --> C["Set up signal handling"]
   C --> D["Start goroutine waiting for signal"]
   D --> E["On signal, log and cancel context"]
-  C --> F["Build crawler config, worker count 8"]
+  C --> F["Build crawler with options (workers, depth)"]
   F --> G["Create crawler with New"]
   G --> H["Run crawler with Run"]
   H --> I["Log error if any"]
@@ -77,8 +72,7 @@ flowchart TD
 ## 7. Error Handling & Edge Cases
 - If `c.Run(ctx)` returns an error, it is logged but not retried; the process then continues to shutdown.
 - If no signal is ever received, the program runs until `c.Run` returns on its own.
-- If a signal is received before the crawler is fully initialized, the context is still canceled, and `Run` should respect that (implementation to be provided in `internal/crawler`).
-- A fixed sleep may be insufficient for very long-running cleanup; this is a simple, bounded wait.
+- If a signal is received before the crawler is fully initialized, the context is still canceled, and `Run` respects that by unblocking on `<-ctx.Done()`.
 
 ## 8. Example Usage
 - Run the crawler from the repository root:
