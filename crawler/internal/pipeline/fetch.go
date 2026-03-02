@@ -35,6 +35,11 @@ func FetchWorker(
 				continue
 			}
 
+			resp, err := client.Do(req)
+			if err != nil {
+				continue
+			}
+
 			item.Response = resp
 
 			select {
