@@ -1,48 +1,69 @@
 # internal/pipeline/fetch.go
 
 ## 1. Overview
-- Purpose: Intended to implement the "fetch" stage of the pipeline that performs HTTP requests for crawl items.
-- Current state: The file exists in `internal/pipeline` but is empty; this document describes the planned role.
-- High-level responsibility (implied): Take scheduled `Item` values, issue HTTP requests, and attach responses.
+- Purpose: Implement the "fetch" stage of the pipeline that performs HTTP requests for crawl items.
+- Current state: The file contains a working HTTP client constructor and a `FetchWorker` function.
+- High-level responsibility: Take scheduled `Item` values, issue HTTP requests with rate limiting, attach responses, and forward them downstream.
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/internal/pipeline/fetch.go`
 
-## 3. Key Components (Planned)
-- Worker functions that:
-  - Read `Item` values from an input channel.
-  - Use a shared HTTP client (possibly with rate limiting) to perform requests.
-  - Populate the `Response` field on each `Item`.
-  - Forward results to the next stage (e.g., parse).
+## 3. Key Components
+- `func NewHTTPClient(timeout time.Duration) *http.Client`
+  - Constructs an `*http.Client` with the provided timeout.
+- `func FetchWorker(ctx context.Context, client *http.Client, limiter *DomainLimiter, in <-chan crawler.Item, out chan<- crawler.Item)`
+  - Worker loop that:
+    - Reads `crawler.Item` values from `in`.
+    - Uses `limiter.Wait(item.URL.Host)` to enforce per-domain rate limiting.
+    - Builds an HTTP GET request with `http.NewRequestWithContext`.
+    - Executes the request with `client.Do(req)`.
+    - On success, assigns the `*http.Response` to `item.Response`.
+    - Attempts to send the enriched item to `out`, closing the response body and returning early if the context is canceled.
 
-## 4. Execution Flow (Planned)
-1. The core crawler or scheduler enqueues `Item` values onto a "scheduled" channel.
-2. One or more fetch workers read from that channel.
-3. For each `Item`, a worker performs an HTTP request and attaches the `*http.Response`.
-4. The enriched `Item` is written to a "fetched" channel for downstream stages.
+## 4. Execution Flow
+1. The core crawler enqueues `crawler.Item` values onto a "scheduled" channel.
+2. One or more `FetchWorker` goroutines read from that channel.
+3. For each `Item`:
+  - The worker waits on the domain limiter for `item.URL.Host`.
+  - Builds a request bound to `ctx` and calls `client.Do(req)`.
+  - On success, sets `item.Response = resp`.
+4. The enriched `Item` is written to the "fetched" channel for downstream stages (parse, discover).
+5. If `ctx` is canceled while sending, the worker closes `resp.Body` and returns.
 
-## 5. Data Flow (Planned)
+## 5. Data Flow
 - **Inputs**
-  - `Item` values with populated `URL` and `Depth`.
+  - `crawler.Item` values with populated `URL` and `Depth` from the scheduled channel.
+  - `ctx` for cancellation.
 - **Processing steps**
-  - Perform HTTP GET (or other) requests.
-  - Handle transient errors, timeouts, and retries.
+  - Enforce domain-level rate limiting via `DomainLimiter`.
+  - Perform HTTP GET requests using a shared `*http.Client`.
+  - Attach the resulting `*http.Response` to each `Item`.
 - **Outputs**
-  - `Item` values with a populated `Response` field.
+  - `crawler.Item` values with a populated `Response` field on the fetched channel.
 - **Dependencies**
-  - Standard library HTTP client and any shared limiter from `internal/pipeline/limiter.go`.
+  - Standard library: `context`, `net/http`, `time`.
+  - Internal: `crawler/internal/crawler` for `Item`, `DomainLimiter` from `internal/pipeline/limiter.go`.
 
-## 6. Mermaid Diagrams (Conceptual)
+## 6. Mermaid Diagrams
 ```mermaid
 flowchart LR
-  A["Scheduled items"] --> B["Fetch workers (planned)"]
+  A["Scheduled items"] --> B["FetchWorker goroutines"]
   B --> C["Fetched items with Response"]
 ```
 
-## 7. Error Handling & Edge Cases (Planned)
-- Network errors, timeouts, and non-2xx status codes must be handled gracefully.
-- Resources like response bodies must be closed to avoid leaks.
-- Backoff and retry strategies may be implemented where appropriate.
+## 7. Error Handling & Edge Cases
+- If `http.NewRequestWithContext` fails, the worker skips the item and continues.
+- If `client.Do(req)` fails, the worker skips the item and continues.
+- When the context is canceled while sending to `out`, the worker closes `resp.Body` to avoid leaks and returns.
+- Callers downstream are responsible for closing `item.Response.Body` after they finish processing.
 
 ## 8. Example Usage
-- No concrete API exists yet; once implemented, this stage will be invoked from `internal/crawler/crawler.go` via helper functions in `internal/pipeline`.
+```go
+client := pipeline.NewHTTPClient(10 * time.Second)
+limiter := pipeline.NewDomainLimiter(500 * time.Millisecond)
+
+scheduled := make(chan crawler.Item)
+fetched := make(chan crawler.Item)
+
+go pipeline.FetchWorker(ctx, client, limiter, scheduled, fetched)
+```
