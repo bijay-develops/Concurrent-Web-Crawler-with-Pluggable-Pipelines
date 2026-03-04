@@ -1,0 +1,25 @@
+# Multi-stage build for the JSON API server
+FROM golang:1.22-alpine AS build
+
+WORKDIR /app
+
+RUN apk add --no-cache git
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN go build -o /bin/api ./cmd/api
+
+FROM alpine:3.19
+
+WORKDIR /app
+
+ENV API_PORT=8090
+
+COPY --from=build /bin/api /usr/local/bin/api
+
+EXPOSE 8090
+
+ENTRYPOINT ["/usr/local/bin/api"]

@@ -1,0 +1,26 @@
+# Multi-stage build for the Web UI + embedded API
+FROM golang:1.22-alpine AS build
+
+WORKDIR /app
+
+# Install build deps (if needed later)
+RUN apk add --no-cache git
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN go build -o /bin/webui ./cmd/webui
+
+FROM alpine:3.19
+
+WORKDIR /app
+
+ENV WEBUI_PORT=8080
+
+COPY --from=build /bin/webui /usr/local/bin/webui
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/local/bin/webui"]

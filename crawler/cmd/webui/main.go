@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -277,6 +278,9 @@ func main() {
 	})
 
 	addr := ":8080"
+	if v := os.Getenv("WEBUI_PORT"); v != "" {
+		addr = ":" + v
+	}
 	log.Printf("Web UI listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
