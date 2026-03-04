@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"crawler/internal/service"
 	"crawler/internal/shared"
+	"crawler/internal/store"
 )
 
 // Handler wires HTTP requests to the CrawlService.
@@ -23,6 +25,7 @@ func NewHandler() *Handler {
 // Register attaches the API routes to a mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/crawls", h.handleStartCrawl)
+	mux.HandleFunc("/api/crawls/history", h.handleListCrawls)
 }
 
 type startCrawlRequest struct {
@@ -38,6 +41,10 @@ type startCrawlResponse struct {
 	Mode  string                `json:"mode"`
 	Stats shared.CrawlStatsView `json:"stats"`
 	Error string                `json:"error,omitempty"`
+}
+
+type crawlHistoryResponse struct {
+	Crawls []map[string]any `json:"crawls"`
 }
 
 func (h *Handler) handleStartCrawl(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +92,55 @@ func (h *Handler) handleStartCrawl(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (h *Handler) handleListCrawls(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	// For now, reach into the FileStore via the concrete type.
+	// If the service store is nil, just return an empty list.
+	fs := h.crawlsStore()
+	if fs == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(crawlHistoryResponse{Crawls: nil})
+		return
+	}
+
+	recs, err := fs.ListCrawls(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	out := make([]map[string]any, 0, len(recs))
+	for _, rec := range recs {
+		out = append(out, map[string]any{
+			"id":         rec.ID,
+			"startedAt":  rec.StartedAt,
+			"finishedAt": rec.FinishedAt,
+			"url":        rec.URL,
+			"mode":       rec.Mode,
+			"stats":      rec.Stats,
+			"error":      rec.Error,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(crawlHistoryResponse{Crawls: out})
+}
+
+// crawlsStore is a helper to access the underlying FileStore when present.
+func (h *Handler) crawlsStore() interface {
+	ListCrawls(context.Context) ([]store.CrawlRecord, error)
+} {
+	// At the moment, CrawlService always uses a FileStore with a known path,
+	// so we can construct a matching store here. In future this could be
+	// injected instead of re-created.
+	return store.NewFileStore("data/crawls.jsonl")
 }
 
 func parseMode(s string) shared.UseCase {

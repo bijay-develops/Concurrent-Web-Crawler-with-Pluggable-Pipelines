@@ -6,6 +6,7 @@ import (
 
 	"crawler/internal/crawler"
 	"crawler/internal/shared"
+	"crawler/internal/store"
 )
 
 // StartRequest describes a crawl request coming from HTTP or CLI.
@@ -27,10 +28,14 @@ type StartResponse struct {
 }
 
 // CrawlService coordinates running short-lived crawls for API callers.
-type CrawlService struct{}
+// It optionally persists crawl summaries via a FileStore.
+type CrawlService struct {
+	store *store.FileStore
+}
 
 func NewCrawlService() *CrawlService {
-	return &CrawlService{}
+	// Persist summaries under ./data/crawls.jsonl relative to the binary.
+	return &CrawlService{store: store.NewFileStore("data/crawls.jsonl")}
 }
 
 // StartCrawl runs a crawl synchronously for now and returns aggregated stats.
@@ -78,6 +83,17 @@ func (s *CrawlService) StartCrawl(ctx context.Context, req StartRequest) (StartR
 			errStr = err.Error()
 		}
 	}
+
+	rec := store.CrawlRecord{
+		ID:         time.Now().UTC().Format("20060102T150405.000000000Z07:00"),
+		StartedAt:  time.Now().UTC(),
+		FinishedAt: time.Now().UTC(),
+		URL:        req.URL,
+		Mode:       mode,
+		Stats:      stats.Snapshot(),
+		Error:      errStr,
+	}
+	_ = s.store.SaveCrawl(ctx, rec)
 
 	return StartResponse{
 		URL:   req.URL,
