@@ -1,0 +1,147 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"html/template"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+
+	"crawler/internal/crawler"
+)
+
+var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Concurrent Web Crawler</title>
+  <style>
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 2rem; background: #0f172a; color: #e5e7eb; }
+    h1 { margin-bottom: 0.5rem; }
+    p { color: #9ca3af; }
+    form { margin-top: 1.5rem; padding: 1.5rem; background: #020617; border-radius: 0.75rem; border: 1px solid #1e293b; max-width: 480px; }
+    label { display: block; margin-top: 1rem; font-size: 0.9rem; color: #9ca3af; }
+    input[type="text"], input[type="number"] { width: 100%; padding: 0.5rem 0.75rem; margin-top: 0.25rem; border-radius: 0.5rem; border: 1px solid #1f2937; background: #020617; color: #e5e7eb; }
+    input[type="text"]:focus, input[type="number"]:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 1px #38bdf8; }
+    button { margin-top: 1.5rem; padding: 0.6rem 1.2rem; border-radius: 999px; border: none; background: linear-gradient(to right, #0ea5e9, #22c55e); color: #020617; font-weight: 600; cursor: pointer; }
+    button:hover { filter: brightness(1.05); }
+    .result { margin-top: 1.5rem; padding: 1rem 1.25rem; border-radius: 0.75rem; border: 1px solid #1e293b; background: #020617; max-width: 480px; font-size: 0.9rem; }
+    .error { color: #fecaca; }
+    .ok { color: #bbf7d0; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Concurrent Web Crawler</h1>
+  <p>Run a crawl with custom URL, worker count, and depth.</p>
+
+  <form method="POST" action="/crawl">
+    <label>
+      Seed URL or domain
+      <input type="text" name="url" value="{{.URL}}" placeholder="e.g. https://example.com or google.com" required />
+    </label>
+
+    <label>
+      Workers
+      <input type="number" name="workers" min="1" max="128" value="{{.Workers}}" />
+    </label>
+
+    <label>
+      Max depth
+      <input type="number" name="depth" min="0" max="8" value="{{.Depth}}" />
+    </label>
+
+    <button type="submit">Start crawl</button>
+  </form>
+
+  {{if .Ran}}
+  <div class="result">
+    <div><strong>Result</strong></div>
+    {{if .Error}}
+      <p class="error">Error: {{.Error}}</p>
+    {{else}}
+      <p class="ok">Crawl finished successfully.</p>
+    {{end}}
+    <p><strong>Config</strong></p>
+    <p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}}</code></p>
+  </div>
+  {{end}}
+</body>
+</html>`))
+
+type pageData struct {
+	URL     string
+	Workers int
+	Depth   int
+	Ran     bool
+	Error   string
+}
+
+func main() {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		data := pageData{URL: "https://example.com", Workers: 8, Depth: 2}
+		_ = pageTmpl.Execute(w, data)
+	})
+
+	mux.HandleFunc("/crawl", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = pageTmpl.Execute(w, pageData{URL: "", Workers: 8, Depth: 2, Ran: true, Error: "invalid form"})
+			return
+		}
+
+		urlVal := r.Form.Get("url")
+		workersVal := r.Form.Get("workers")
+		depthVal := r.Form.Get("depth")
+
+		workers := 8
+		if workersVal != "" {
+			if n, err := strconv.Atoi(workersVal); err == nil && n > 0 {
+				workers = n
+			}
+		}
+
+		depth := 2
+		if depthVal != "" {
+			if d, err := strconv.Atoi(depthVal); err == nil && d >= 0 {
+				depth = d
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+
+		c := crawler.New(
+			crawler.WithWorkerCount(workers),
+			crawler.WithMaxDepth(depth),
+			crawler.WithSeedURL(urlVal),
+		)
+
+		var runErr string
+		if err := c.Run(ctx); err != nil {
+			// Treat normal shutdown (context cancelled or timed out) as success
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				runErr = err.Error()
+			}
+		}
+
+		data := pageData{
+			URL:     urlVal,
+			Workers: workers,
+			Depth:   depth,
+			Ran:     true,
+			Error:   runErr,
+		}
+		_ = pageTmpl.Execute(w, data)
+	})
+
+	addr := ":8080"
+	log.Printf("Web UI listening on %s", addr)
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatal(err)
+	}
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log"
 	"os"
@@ -37,6 +38,10 @@ func main() {
 	)
 
 	if err := c.Run(ctx); err != nil {
-		log.Println("crawler exited:", err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			log.Println("crawler finished (context closed):", err)
+		} else {
+			log.Println("crawler exited with error:", err)
+		}
 	}
 }
