@@ -105,7 +105,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 		close(fetched)
 	}()
 
-	go pipeline.ParseWorker(ctx, fetched, parsed)
+	go pipeline.ParseWorker(ctx, fetched, parsed, c.stats)
 	go pipeline.DiscoverWorker(ctx, parsed, discovered, c.maxDepth, tracker)
 	go scheduler.Schedule(ctx, discovered, scheduled)
 

@@ -158,8 +158,18 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					if (stats.lastStatusCode) {
 						html += '<li>Last status code: ' + stats.lastStatusCode + '</li>';
 					}
-					if (stats.lastURL) {
-						html += '<li>Last URL: ' + stats.lastURL + '</li>';
+					if (stats.lastUrl) {
+						html += '<li>Last URL: ' + stats.lastUrl + '</li>';
+					}
+					if (stats.parsedPages) {
+						html += '<li>Pages parsed for content: ' + stats.parsedPages + '</li>';
+					}
+					if (stats.totalWords) {
+						html += '<li>Total words (approx): ' + stats.totalWords + '</li>';
+					}
+					if (stats.totalInternalLinks || stats.totalExternalLinks) {
+						html += '<li>Internal links (sum): ' + (stats.totalInternalLinks || 0) + '</li>';
+						html += '<li>External links (sum): ' + (stats.totalExternalLinks || 0) + '</li>';
 					}
 					html += '</ul>';
 
@@ -182,6 +192,16 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					}
 					if (summary.primaryStatus) {
 						html += '<li>Primary status code: ' + summary.primaryStatus + '</li>';
+					}
+					if (typeof summary.averageWordsPerPage === 'number' && summary.averageWordsPerPage > 0) {
+						html += '<li>Average words per page: ' + summary.averageWordsPerPage + '</li>';
+					}
+					if (summary.longestPageTitle || summary.longestPageUrl) {
+						html += '<li>Largest page: ' +
+						  (summary.longestPageTitle ? ('"' + summary.longestPageTitle + '" ') : '') +
+						  (summary.longestPageWordCount ? ('(' + summary.longestPageWordCount + ' words) ') : '') +
+						  (summary.longestPageUrl ? ('@ ' + summary.longestPageUrl) : '') +
+						  '</li>';
 					}
 					html += '</ul>';
 

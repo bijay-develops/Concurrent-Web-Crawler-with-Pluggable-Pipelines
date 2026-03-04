@@ -55,20 +55,37 @@ type CrawlStats struct {
 
 	LastStatusCode int
 	LastURL        string
+
+	// Simple scraping / content analytics
+	ParsedPages          int
+	TotalWords           int
+	TotalInternalLinks   int
+	TotalExternalLinks   int
+	LongestPageWordCount int
+	LongestPageURL       string
+	LongestPageTitle     string
 }
 
 // CrawlStatsView is an immutable, lock-free snapshot of CrawlStats
 // intended for read-only reporting and UI rendering.
 type CrawlStatsView struct {
-	TotalRequests  int
-	Success2xx     int
-	ClientError4xx int
-	ServerError5xx int
-	OtherStatus    int
-	NetworkErrors  int
+	TotalRequests  int `json:"totalRequests"`
+	Success2xx     int `json:"success2xx"`
+	ClientError4xx int `json:"clientError4xx"`
+	ServerError5xx int `json:"serverError5xx"`
+	OtherStatus    int `json:"otherStatus"`
+	NetworkErrors  int `json:"networkErrors"`
 
-	LastStatusCode int
-	LastURL        string
+	LastStatusCode int    `json:"lastStatusCode"`
+	LastURL        string `json:"lastUrl"`
+
+	ParsedPages          int    `json:"parsedPages"`
+	TotalWords           int    `json:"totalWords"`
+	TotalInternalLinks   int    `json:"totalInternalLinks"`
+	TotalExternalLinks   int    `json:"totalExternalLinks"`
+	LongestPageWordCount int    `json:"longestPageWordCount"`
+	LongestPageURL       string `json:"longestPageUrl"`
+	LongestPageTitle     string `json:"longestPageTitle"`
 }
 
 // ModeSummary is a small, user-friendly interpretation of stats for a
@@ -83,6 +100,12 @@ type ModeSummary struct {
 	PrimaryStatus int            `json:"primaryStatus"`
 	Message       string         `json:"message"`
 	RawStats      CrawlStatsView `json:"rawStats"`
+
+	// Extra analytics derived from RawStats for convenience in UIs.
+	AverageWordsPerPage  int    `json:"averageWordsPerPage"`
+	LongestPageURL       string `json:"longestPageUrl"`
+	LongestPageTitle     string `json:"longestPageTitle"`
+	LongestPageWordCount int    `json:"longestPageWordCount"`
 }
 
 // RecordSuccess updates stats for a successful HTTP response.
@@ -121,6 +144,33 @@ func (s *CrawlStats) RecordNetworkError() {
 	s.NetworkErrors++
 }
 
+// RecordPageMetrics updates simple scraping/analytics statistics for a
+// successfully fetched page. It is safe for concurrent use.
+func (s *CrawlStats) RecordPageMetrics(url, title string, wordCount, internalLinks, externalLinks int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if wordCount > 0 {
+		s.ParsedPages++
+		s.TotalWords += wordCount
+		if wordCount > s.LongestPageWordCount {
+			s.LongestPageWordCount = wordCount
+			s.LongestPageURL = url
+			s.LongestPageTitle = title
+		}
+	}
+
+	if internalLinks > 0 {
+		s.TotalInternalLinks += internalLinks
+	}
+	if externalLinks > 0 {
+		s.TotalExternalLinks += externalLinks
+	}
+}
+
 // Snapshot returns a lock-free copy of the stats for read-only use.
 func (s *CrawlStats) Snapshot() CrawlStatsView {
 	if s == nil {
@@ -130,14 +180,21 @@ func (s *CrawlStats) Snapshot() CrawlStatsView {
 	defer s.mu.Unlock()
 
 	return CrawlStatsView{
-		TotalRequests:  s.TotalRequests,
-		Success2xx:     s.Success2xx,
-		ClientError4xx: s.ClientError4xx,
-		ServerError5xx: s.ServerError5xx,
-		OtherStatus:    s.OtherStatus,
-		NetworkErrors:  s.NetworkErrors,
-		LastStatusCode: s.LastStatusCode,
-		LastURL:        s.LastURL,
+		TotalRequests:        s.TotalRequests,
+		Success2xx:           s.Success2xx,
+		ClientError4xx:       s.ClientError4xx,
+		ServerError5xx:       s.ServerError5xx,
+		OtherStatus:          s.OtherStatus,
+		NetworkErrors:        s.NetworkErrors,
+		LastStatusCode:       s.LastStatusCode,
+		LastURL:              s.LastURL,
+		ParsedPages:          s.ParsedPages,
+		TotalWords:           s.TotalWords,
+		TotalInternalLinks:   s.TotalInternalLinks,
+		TotalExternalLinks:   s.TotalExternalLinks,
+		LongestPageWordCount: s.LongestPageWordCount,
+		LongestPageURL:       s.LongestPageURL,
+		LongestPageTitle:     s.LongestPageTitle,
 	}
 }
 
@@ -154,6 +211,10 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 	isReachable := false
 	isHealthy := false
 	isIndexable := false
+	avgWords := 0
+	if v.ParsedPages > 0 {
+		avgWords = v.TotalWords / v.ParsedPages
+	}
 
 	switch mode {
 	case UseCaseTrackBlogs:
@@ -175,6 +236,9 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 			msg = fmt.Sprintf("We reached %d page(s) successfully, but some returned 4xx errors.", v.Success2xx)
 		default:
 			msg = fmt.Sprintf("Your blog looks reachable. We saw %d successful page(s).", v.Success2xx)
+		}
+		if avgWords > 0 {
+			msg += fmt.Sprintf(" Average content length is about %d words per page (largest page %d words).", avgWords, v.LongestPageWordCount)
 		}
 
 	case UseCaseSiteHealth:
@@ -244,13 +308,17 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 	}
 
 	return ModeSummary{
-		Mode:          mode,
-		CheckedPages:  checked,
-		IsReachable:   isReachable,
-		IsHealthy:     isHealthy,
-		IsIndexable:   isIndexable,
-		PrimaryStatus: v.LastStatusCode,
-		Message:       msg,
-		RawStats:      v,
+		Mode:                 mode,
+		CheckedPages:         checked,
+		IsReachable:          isReachable,
+		IsHealthy:            isHealthy,
+		IsIndexable:          isIndexable,
+		PrimaryStatus:        v.LastStatusCode,
+		Message:              msg,
+		RawStats:             v,
+		AverageWordsPerPage:  avgWords,
+		LongestPageURL:       v.LongestPageURL,
+		LongestPageTitle:     v.LongestPageTitle,
+		LongestPageWordCount: v.LongestPageWordCount,
 	}
 }
