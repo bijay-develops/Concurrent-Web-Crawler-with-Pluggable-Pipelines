@@ -7,9 +7,11 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"crawler/internal/crawler"
+	"crawler/internal/shared"
 )
 
 var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
@@ -31,6 +33,10 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
     .error { color: #fecaca; }
     .ok { color: #bbf7d0; }
     code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; }
+		.mode-group { margin-top: 1rem; }
+		.mode-title { display: block; font-size: 0.9rem; color: #9ca3af; margin-bottom: 0.4rem; }
+		.mode-option { display: block; margin-top: 0.25rem; font-size: 0.85rem; }
+		.mode-option input { margin-right: 0.35rem; }
   </style>
 </head>
 <body>
@@ -53,6 +59,22 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
       <input type="number" name="depth" min="0" max="8" value="{{.Depth}}" />
     </label>
 
+		<div class="mode-group">
+			<span class="mode-title">Use case</span>
+			<label class="mode-option">
+				<input type="radio" name="mode" value="blogs" {{if eq .Mode "blogs"}}checked{{end}} />
+				1. Track my favourite blogs
+			</label>
+			<label class="mode-option">
+				<input type="radio" name="mode" value="health" {{if eq .Mode "health"}}checked{{end}} />
+				2. Internal Site Health Checker
+			</label>
+			<label class="mode-option">
+				<input type="radio" name="mode" value="search" {{if eq .Mode "search"}}checked{{end}} />
+				3. Data Pipeline Search Index
+			</label>
+		</div>
+
     <button type="submit">Start crawl</button>
   </form>
 
@@ -65,7 +87,7 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
       <p class="ok">Crawl finished successfully.</p>
     {{end}}
     <p><strong>Config</strong></p>
-    <p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}}</code></p>
+		<p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}} mode={{.Mode}}</code></p>
   </div>
   {{end}}
 </body>
@@ -75,15 +97,46 @@ type pageData struct {
 	URL     string
 	Workers int
 	Depth   int
+	Mode    string
 	Ran     bool
 	Error   string
+}
+
+func normalizeMode(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return "blogs"
+	}
+	switch s {
+	case "1", "blogs", "blog", "track-blogs", "track my favourite blogs":
+		return "blogs"
+	case "2", "health", "site-health", "internal site health checker":
+		return "health"
+	case "3", "search", "index", "search-index", "data pipeline search index":
+		return "search"
+	default:
+		return "blogs"
+	}
+}
+
+func parseUseCase(mode string) shared.UseCase {
+	switch mode {
+	case "blogs":
+		return shared.UseCaseTrackBlogs
+	case "health":
+		return shared.UseCaseSiteHealth
+	case "search":
+		return shared.UseCaseSearchIndex
+	default:
+		return shared.UseCaseTrackBlogs
+	}
 }
 
 func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		data := pageData{URL: "https://example.com", Workers: 8, Depth: 2}
+		data := pageData{URL: "https://example.com", Workers: 8, Depth: 2, Mode: "blogs"}
 		_ = pageTmpl.Execute(w, data)
 	})
 
@@ -97,6 +150,7 @@ func main() {
 		urlVal := r.Form.Get("url")
 		workersVal := r.Form.Get("workers")
 		depthVal := r.Form.Get("depth")
+		modeVal := r.Form.Get("mode")
 
 		workers := 8
 		if workersVal != "" {
@@ -112,6 +166,9 @@ func main() {
 			}
 		}
 
+		modeStr := normalizeMode(modeVal)
+		useCase := parseUseCase(modeStr)
+
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 
@@ -119,6 +176,7 @@ func main() {
 			crawler.WithWorkerCount(workers),
 			crawler.WithMaxDepth(depth),
 			crawler.WithSeedURL(urlVal),
+			crawler.WithUseCase(useCase),
 		)
 
 		var runErr string
@@ -133,6 +191,7 @@ func main() {
 			URL:     urlVal,
 			Workers: workers,
 			Depth:   depth,
+			Mode:    modeStr,
 			Ran:     true,
 			Error:   runErr,
 		}

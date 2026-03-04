@@ -15,6 +15,7 @@ type Crawler struct {
 	workers  int
 	maxDepth int
 	seedURL  string
+	mode     shared.UseCase
 }
 
 type Option func(*Crawler)
@@ -37,11 +38,18 @@ func WithSeedURL(u string) Option {
 	}
 }
 
+func WithUseCase(mode shared.UseCase) Option {
+	return func(c *Crawler) {
+		c.mode = mode
+	}
+}
+
 func New(opts ...Option) *Crawler {
 	c := &Crawler{
 		workers:  4,
 		maxDepth: 1,
 		seedURL:  "https://example.com",
+		mode:     shared.UseCaseTrackBlogs,
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -81,7 +89,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 	for i := 0; i < c.workers; i++ {
 		go func() {
 			defer fetchWG.Done()
-			pipeline.FetchWorker(ctx, client, limiter, scheduled, fetched)
+			pipeline.FetchWorker(ctx, client, limiter, scheduled, fetched, c.mode)
 		}()
 	}
 
@@ -102,7 +110,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 	go func() {
 		defer close(seeds)
 		tracker.Add(1)
-		seeds <- shared.Item{URL: seedURL, Depth: 0}
+		seeds <- shared.Item{URL: seedURL, Depth: 0, Mode: c.mode}
 	}()
 
 	<-ctx.Done()

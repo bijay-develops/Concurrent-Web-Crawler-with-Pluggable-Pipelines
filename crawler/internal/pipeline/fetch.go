@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -18,6 +19,7 @@ func FetchWorker(
 	limiter *DomainLimiter,
 	in <-chan shared.Item,
 	out chan<- shared.Item,
+	mode shared.UseCase,
 ) {
 	for {
 		select {
@@ -41,6 +43,17 @@ func FetchWorker(
 			}
 
 			item.Response = resp
+
+			switch mode {
+			case shared.UseCaseTrackBlogs:
+				log.Printf("[Blogs] fetched %s status=%d", item.URL.String(), resp.StatusCode)
+			case shared.UseCaseSiteHealth:
+				log.Printf("[Health] fetched %s status=%d", item.URL.String(), resp.StatusCode)
+			case shared.UseCaseSearchIndex:
+				log.Printf("[SearchIndex] fetched %s status=%d", item.URL.String(), resp.StatusCode)
+			default:
+				log.Printf("[Crawl] fetched %s status=%d", item.URL.String(), resp.StatusCode)
+			}
 
 			select {
 			case out <- item:
