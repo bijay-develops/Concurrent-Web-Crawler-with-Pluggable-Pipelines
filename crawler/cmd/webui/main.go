@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"crawler/internal/crawler"
+	"crawler/internal/httpapi"
 	"crawler/internal/shared"
 )
 
@@ -94,6 +95,72 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 		{{end}}
   </div>
   {{end}}
+	<script>
+		(function() {
+			const form = document.querySelector('form');
+			if (!form) return;
+
+			form.addEventListener('submit', async function (e) {
+				e.preventDefault();
+
+				const formData = new FormData(form);
+				const url = formData.get('url');
+				const workers = parseInt(formData.get('workers') || '8', 10);
+				const depth = parseInt(formData.get('depth') || '2', 10);
+				const mode = formData.get('mode') || 'blogs';
+
+				const resultBox = document.querySelector('.result');
+				if (resultBox) {
+					resultBox.innerHTML = '<div><strong>Result</strong></div><p>Running crawl...</p>';
+				}
+
+				try {
+					const res = await fetch('/api/crawls', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ url, workers, depth, mode, timeoutSeconds: 30 })
+					});
+					const data = await res.json();
+
+					if (!resultBox) return;
+
+					let html = '<div><strong>Result</strong></div>';
+					if (data.error) {
+						html += '<p class="error">Error: ' + data.error + '</p>';
+					} else {
+						html += '<p class="ok">Crawl finished successfully.</p>';
+					}
+					html += '<p><strong>Config</strong></p>';
+					html += '<p><code>url=' + (data.url || url) + ' workers=' + workers + ' depth=' + depth + ' mode=' + mode + '</code></p>';
+
+					// Basic interpretation based on stats
+					if (data.stats && data.stats.totalRequests !== 0) {
+						const s = data.stats;
+						let statusText = '';
+						if (s.lastStatusCode >= 200 && s.lastStatusCode < 300) {
+							statusText = 'The last page responded with a successful status (2xx).';
+						} else if (s.lastStatusCode >= 400 && s.lastStatusCode < 500) {
+							statusText = 'The last page returned a client error (4xx) — check the URL or permissions.';
+						} else if (s.lastStatusCode >= 500 && s.lastStatusCode < 600) {
+							statusText = 'The last page returned a server error (5xx) — the site might be having issues.';
+						} else if (s.networkErrors > 0) {
+							statusText = 'The request failed before getting a response — there may be network or DNS issues.';
+						} else {
+							statusText = 'The last response had a non-standard status code.';
+						}
+						html += '<p><strong>What this means</strong></p>';
+						html += '<p>Checked ' + s.totalRequests + ' page(s). ' + statusText + '</p>';
+					}
+
+					resultBox.innerHTML = html;
+				} catch (err) {
+					if (resultBox) {
+						resultBox.innerHTML = '<div><strong>Result</strong></div><p class="error">Failed to call API: ' + err + '</p>';
+					}
+				}
+			});
+		})();
+	</script>
 </body>
 </html>`))
 
@@ -174,6 +241,11 @@ func buildSummary(useCase shared.UseCase, s shared.CrawlStatsView) string {
 
 func main() {
 	mux := http.NewServeMux()
+
+	// Attach JSON API on the same server so the Web UI can
+	// talk to it without CORS issues.
+	apiHandler := httpapi.NewHandler()
+	apiHandler.Register(mux)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		data := pageData{URL: "https://example.com", Workers: 8, Depth: 2, Mode: "blogs"}
