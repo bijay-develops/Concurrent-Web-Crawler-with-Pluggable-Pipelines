@@ -66,6 +66,14 @@ type CrawlStats struct {
 	LongestPageURL       string
 	LongestPageTitle     string
 
+	// Content mix breakdown and smallest page info.
+	SmallPages       int
+	MediumPages      int
+	LargePages       int
+	MinPageWordCount int
+	MinPageURL       string
+	MinPageTitle     string
+
 	// Lightweight topic aggregation across parsed pages.
 	topicCounts   map[string]int
 	topicExamples map[string][]string
@@ -82,6 +90,7 @@ type PageRecord struct {
 	WordCount     int      `json:"wordCount"`
 	InternalLinks int      `json:"internalLinks"`
 	ExternalLinks int      `json:"externalLinks"`
+	SizeCategory  string   `json:"sizeCategory,omitempty"`
 	Keywords      []string `json:"keywords"`
 }
 
@@ -105,6 +114,12 @@ type CrawlStatsView struct {
 	LongestPageWordCount int    `json:"longestPageWordCount"`
 	LongestPageURL       string `json:"longestPageUrl"`
 	LongestPageTitle     string `json:"longestPageTitle"`
+	SmallPages           int    `json:"smallPages"`
+	MediumPages          int    `json:"mediumPages"`
+	LargePages           int    `json:"largePages"`
+	MinPageWordCount     int    `json:"minPageWordCount"`
+	MinPageURL           string `json:"minPageUrl"`
+	MinPageTitle         string `json:"minPageTitle"`
 
 	Topics []TopicSummary `json:"topics"`
 }
@@ -130,11 +145,19 @@ type ModeSummary struct {
 	RawStats      CrawlStatsView `json:"rawStats"`
 
 	// Extra analytics derived from RawStats for convenience in UIs.
-	AverageWordsPerPage  int            `json:"averageWordsPerPage"`
-	LongestPageURL       string         `json:"longestPageUrl"`
-	LongestPageTitle     string         `json:"longestPageTitle"`
-	LongestPageWordCount int            `json:"longestPageWordCount"`
-	TopTopics            []TopicSummary `json:"topTopics"`
+	AverageWordsPerPage         int            `json:"averageWordsPerPage"`
+	LongestPageURL              string         `json:"longestPageUrl"`
+	LongestPageTitle            string         `json:"longestPageTitle"`
+	LongestPageWordCount        int            `json:"longestPageWordCount"`
+	TopTopics                   []TopicSummary `json:"topTopics"`
+	SmallPageCount              int            `json:"smallPageCount"`
+	MediumPageCount             int            `json:"mediumPageCount"`
+	LargePageCount              int            `json:"largePageCount"`
+	MinPageURL                  string         `json:"minPageUrl"`
+	MinPageTitle                string         `json:"minPageTitle"`
+	MinPageWordCount            int            `json:"minPageWordCount"`
+	AverageInternalLinksPerPage int            `json:"averageInternalLinksPerPage"`
+	AverageExternalLinksPerPage int            `json:"averageExternalLinksPerPage"`
 }
 
 // RecordSuccess updates stats for a successful HTTP response.
@@ -191,6 +214,23 @@ func (s *CrawlStats) RecordPageMetrics(url, title string, wordCount, internalLin
 			s.LongestPageURL = url
 			s.LongestPageTitle = title
 		}
+		// Track smallest page seen so far.
+		if s.MinPageWordCount == 0 || wordCount < s.MinPageWordCount {
+			s.MinPageWordCount = wordCount
+			s.MinPageURL = url
+			s.MinPageTitle = title
+		}
+
+		// Update size category counters.
+		size := classifyPageSize(wordCount)
+		switch size {
+		case "small":
+			s.SmallPages++
+		case "medium":
+			s.MediumPages++
+		case "large":
+			s.LargePages++
+		}
 	}
 
 	if internalLinks > 0 {
@@ -208,6 +248,7 @@ func (s *CrawlStats) RecordPageMetrics(url, title string, wordCount, internalLin
 		WordCount:     wordCount,
 		InternalLinks: internalLinks,
 		ExternalLinks: externalLinks,
+		SizeCategory:  classifyPageSize(wordCount),
 		Keywords:      append([]string(nil), keywords...),
 	}
 	// Lazily allocate a slice on first use.
@@ -289,6 +330,12 @@ func (s *CrawlStats) Snapshot() CrawlStatsView {
 		LongestPageWordCount: s.LongestPageWordCount,
 		LongestPageURL:       s.LongestPageURL,
 		LongestPageTitle:     s.LongestPageTitle,
+		SmallPages:           s.SmallPages,
+		MediumPages:          s.MediumPages,
+		LargePages:           s.LargePages,
+		MinPageWordCount:     s.MinPageWordCount,
+		MinPageURL:           s.MinPageURL,
+		MinPageTitle:         s.MinPageTitle,
 	}
 
 	// Derive a small, sorted list of top topics for reporting.
@@ -332,6 +379,12 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 	avgWords := 0
 	if v.ParsedPages > 0 {
 		avgWords = v.TotalWords / v.ParsedPages
+	}
+	avgInternalLinks := 0
+	avgExternalLinks := 0
+	if v.ParsedPages > 0 {
+		avgInternalLinks = v.TotalInternalLinks / v.ParsedPages
+		avgExternalLinks = v.TotalExternalLinks / v.ParsedPages
 	}
 
 	switch mode {
@@ -426,20 +479,43 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 	}
 
 	return ModeSummary{
-		Mode:                 mode,
-		CheckedPages:         checked,
-		IsReachable:          isReachable,
-		IsHealthy:            isHealthy,
-		IsIndexable:          isIndexable,
-		PrimaryStatus:        v.LastStatusCode,
-		Message:              msg,
-		RawStats:             v,
-		AverageWordsPerPage:  avgWords,
-		LongestPageURL:       v.LongestPageURL,
-		LongestPageTitle:     v.LongestPageTitle,
-		LongestPageWordCount: v.LongestPageWordCount,
-		TopTopics:            v.Topics,
+		Mode:                        mode,
+		CheckedPages:                checked,
+		IsReachable:                 isReachable,
+		IsHealthy:                   isHealthy,
+		IsIndexable:                 isIndexable,
+		PrimaryStatus:               v.LastStatusCode,
+		Message:                     msg,
+		RawStats:                    v,
+		AverageWordsPerPage:         avgWords,
+		LongestPageURL:              v.LongestPageURL,
+		LongestPageTitle:            v.LongestPageTitle,
+		LongestPageWordCount:        v.LongestPageWordCount,
+		TopTopics:                   v.Topics,
+		SmallPageCount:              v.SmallPages,
+		MediumPageCount:             v.MediumPages,
+		LargePageCount:              v.LargePages,
+		MinPageURL:                  v.MinPageURL,
+		MinPageTitle:                v.MinPageTitle,
+		MinPageWordCount:            v.MinPageWordCount,
+		AverageInternalLinksPerPage: avgInternalLinks,
+		AverageExternalLinksPerPage: avgExternalLinks,
 	}
+}
+
+// classifyPageSize converts a word count into a coarse size bucket so
+// UIs can describe the mix of short vs long pages.
+func classifyPageSize(words int) string {
+	if words <= 0 {
+		return ""
+	}
+	if words < 800 {
+		return "small"
+	}
+	if words <= 2500 {
+		return "medium"
+	}
+	return "large"
 }
 
 // TopTopicsFromMaps converts raw keyword counts and examples into a sorted

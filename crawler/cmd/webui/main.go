@@ -204,6 +204,26 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 						  (summary.longestPageUrl ? ('@ ' + summary.longestPageUrl) : '') +
 						  '</li>';
 					}
+					if (summary.minPageTitle || summary.minPageUrl) {
+						html += '<li>Smallest page: ' +
+						  (summary.minPageTitle ? ('"' + summary.minPageTitle + '" ') : '') +
+						  (summary.minPageWordCount ? ('(' + summary.minPageWordCount + ' words) ') : '') +
+						  (summary.minPageUrl ? ('@ ' + summary.minPageUrl) : '') +
+						  '</li>';
+					}
+					if (typeof summary.smallPageCount === 'number' || typeof summary.mediumPageCount === 'number' || typeof summary.largePageCount === 'number') {
+						html += '<li>Content mix: ' +
+						  (summary.smallPageCount ? (summary.smallPageCount + ' small') : '0 small') + ', ' +
+						  (summary.mediumPageCount ? (summary.mediumPageCount + ' medium') : '0 medium') + ', ' +
+						  (summary.largePageCount ? (summary.largePageCount + ' large') : '0 large') +
+						  ' page(s)</li>';
+					}
+					if (typeof summary.averageInternalLinksPerPage === 'number' && summary.averageInternalLinksPerPage > 0) {
+						html += '<li>Avg internal links per page: ' + summary.averageInternalLinksPerPage + '</li>';
+					}
+					if (typeof summary.averageExternalLinksPerPage === 'number' && summary.averageExternalLinksPerPage > 0) {
+						html += '<li>Avg external links per page: ' + summary.averageExternalLinksPerPage + '</li>';
+					}
 					html += '</ul>';
 
 					// Topics / themes derived from pages
@@ -256,7 +276,7 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 								alert('No page-level data available for this crawl.');
 								return;
 							}
-							const header = ['url','title','wordCount','internalLinks','externalLinks','keywords'];
+							const header = ['url','title','wordCount','internalLinks','externalLinks','sizeCategory','keywords'];
 							const rows = [header.join(',')];
 							pages.forEach(function(p) {
 								const row = [
@@ -265,6 +285,7 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 									p.wordCount || 0,
 									p.internalLinks || 0,
 									p.externalLinks || 0,
+									(p.sizeCategory || ''),
 									Array.isArray(p.keywords) ? p.keywords.join(';').replace(/"/g, '""') : ''
 								];
 								rows.push('"' + row.join('","') + '"');
