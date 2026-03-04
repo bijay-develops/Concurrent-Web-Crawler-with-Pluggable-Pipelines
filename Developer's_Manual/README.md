@@ -26,7 +26,7 @@ Typical pattern:
 2. Call `POST /api/crawls` from your Next.js API route / server action.
 3. Store or display the returned `stats` and `summary` in your own DB / UI.
 
-Pseudocode sketch for a Next.js route handler (Node.js):
+### 2.1 Next.js route handler (Node.js)
 
 ```ts
 // app/api/crawl/route.ts (Next.js App Router example)
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
   const body = await req.json();
   const { url, mode = 'blogs' } = body;
 
-  const res = await fetch('http://localhost:8090/api/crawls', {
+  const res = await fetch(process.env.CRAWLER_URL ?? 'http://localhost:8090/api/crawls', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url, workers: 4, depth: 1, mode, timeoutSeconds: 30 }),
@@ -51,6 +51,18 @@ export async function POST(req: Request) {
 ```
 
 On the frontend, you call your own `/api/crawl` and render `data.summary.message` plus raw `stats`.
+
+### 2.2 Environment configuration
+
+In development:
+
+- Run the crawler API locally and keep `CRAWLER_URL` unset (the default `http://localhost:8090/api/crawls` is used).
+
+In Docker / production:
+
+- Set `CRAWLER_URL` to the internal service URL, for example: `http://crawler-api:8090/api/crawls`.
+
+This keeps your Next.js code the same across environments.
 
 ## 3. Persist results in Postgres / MySQL / MongoDB
 
@@ -73,6 +85,56 @@ That gives you:
 - Dashboards for site health over time.
 - Ability to query for failing URLs.
 - A history of crawls you can join with other business data.
+
+### 3.1 Postgres / MySQL schema example
+
+For relational databases, you can use a table like:
+
+```sql
+CREATE TABLE crawl_runs (
+  id            bigserial PRIMARY KEY,
+  url           text NOT NULL,
+  mode          text NOT NULL,
+  status_code   integer,
+  summary       text,
+  stats_json    jsonb,
+  created_at    timestamptz DEFAULT now()
+);
+```
+
+Insert from Node.js (pseudo-code):
+
+```ts
+await db.query(
+  'INSERT INTO crawl_runs (url, mode, status_code, summary, stats_json) VALUES ($1,$2,$3,$4,$5)',
+  [
+    data.url,
+    data.mode,
+    data.stats.lastStatusCode,
+    data.summary.message,
+    data.stats,
+  ],
+);
+```
+
+For MySQL, use `JSON` instead of `jsonb` and adapt the types as needed.
+
+### 3.2 MongoDB collection example
+
+For MongoDB, create a `crawl_runs` collection and insert documents like:
+
+```ts
+await db.collection('crawl_runs').insertOne({
+  url: data.url,
+  mode: data.mode,
+  statusCode: data.stats.lastStatusCode,
+  summary: data.summary.message,
+  stats: data.stats,
+  createdAt: new Date(),
+});
+```
+
+From there you can build dashboards, alerts, or analytics over this collection.
 
 ## 4. Use it for automated site-health checks (CI/CD)
 
