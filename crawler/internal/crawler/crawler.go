@@ -5,6 +5,7 @@ import (
 	"crawler/internal/pipeline"
 	"crawler/internal/shared"
 	"errors"
+	"fmt"
 	"net/url"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 type Crawler struct {
 	workers  int
 	maxDepth int
+	seedURL  string
 }
 
 type Option func(*Crawler)
@@ -29,10 +31,17 @@ func WithMaxDepth(d int) Option {
 	}
 }
 
+func WithSeedURL(u string) Option {
+	return func(c *Crawler) {
+		c.seedURL = u
+	}
+}
+
 func New(opts ...Option) *Crawler {
 	c := &Crawler{
 		workers:  4,
 		maxDepth: 1,
+		seedURL:  "https://example.com",
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -43,6 +52,11 @@ func New(opts ...Option) *Crawler {
 func (c *Crawler) Run(ctx context.Context) error {
 	if c.workers <= 0 {
 		return errors.New("worker count must be > 0")
+	}
+
+	seedURL, err := url.Parse(c.seedURL)
+	if err != nil {
+		return fmt.Errorf("invalid seed URL %q: %w", c.seedURL, err)
 	}
 
 	tracker := &shared.WorkTracker{}
@@ -87,9 +101,8 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 	go func() {
 		defer close(seeds)
-		u, _ := url.Parse("https://example.com")
 		tracker.Add(1)
-		seeds <- shared.Item{URL: u, Depth: 0}
+		seeds <- shared.Item{URL: seedURL, Depth: 0}
 	}()
 
 	<-ctx.Done()

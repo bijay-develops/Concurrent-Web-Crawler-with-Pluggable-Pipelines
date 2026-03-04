@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -11,6 +12,12 @@ import (
 )
 
 func main() {
+	workers := flag.Int("workers", 8, "number of concurrent worker goroutines")
+	maxDepth := flag.Int("depth", 2, "maximum crawl depth")
+	seedURL := flag.String("url", "https://example.com", "seed URL to start crawling from")
+
+	flag.Parse()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -24,8 +31,9 @@ func main() {
 	}()
 
 	c := crawler.New(
-		crawler.WithWorkerCount(8),
-		crawler.WithMaxDepth(2),
+		crawler.WithWorkerCount(*workers),
+		crawler.WithMaxDepth(*maxDepth),
+		crawler.WithSeedURL(*seedURL),
 	)
 
 	if err := c.Run(ctx); err != nil {
