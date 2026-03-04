@@ -20,94 +20,182 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Concurrent Web Crawler</title>
   <style>
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 2rem; background: #0f172a; color: #e5e7eb; }
-    h1 { margin-bottom: 0.5rem; }
-    p { color: #9ca3af; }
-    form { margin-top: 1.5rem; padding: 1.5rem; background: #020617; border-radius: 0.75rem; border: 1px solid #1e293b; max-width: 480px; }
-    label { display: block; margin-top: 1rem; font-size: 0.9rem; color: #9ca3af; }
-    input[type="text"], input[type="number"] { width: 100%; padding: 0.5rem 0.75rem; margin-top: 0.25rem; border-radius: 0.5rem; border: 1px solid #1f2937; background: #020617; color: #e5e7eb; }
-    input[type="text"]:focus, input[type="number"]:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 1px #38bdf8; }
-    button { margin-top: 1.5rem; padding: 0.6rem 1.2rem; border-radius: 999px; border: none; background: linear-gradient(to right, #0ea5e9, #22c55e); color: #020617; font-weight: 600; cursor: pointer; }
-    button:hover { filter: brightness(1.05); }
-    .result { margin-top: 1.5rem; padding: 1rem 1.25rem; border-radius: 0.75rem; border: 1px solid #1e293b; background: #020617; max-width: 480px; font-size: 0.9rem; }
-    .error { color: #fecaca; }
-    .ok { color: #bbf7d0; }
-    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.85rem; }
+		:root {
+			--bg: #0f172a;
+			--panel: #020617;
+			--border: #1e293b;
+			--text: #e5e7eb;
+			--muted: #9ca3af;
+			--focus: #38bdf8;
+			--ok: #bbf7d0;
+			--err: #fecaca;
+		}
+		* { box-sizing: border-box; }
+		body {
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			margin: 0;
+			padding: clamp(1rem, 3vw, 2.5rem);
+			background: var(--bg);
+			color: var(--text);
+			line-height: 1.5;
+		}
+		h1 { margin: 0 0 0.35rem 0; font-size: 1.75rem; letter-spacing: -0.02em; }
+		p { margin: 0.5rem 0; color: var(--muted); }
+		.container { max-width: 1120px; margin: 0 auto; }
+		.header { margin-bottom: 1.25rem; }
+		.layout { display: grid; grid-template-columns: 1fr; gap: 1rem; align-items: start; }
+		@media (min-width: 900px) {
+			.layout { grid-template-columns: 420px 1fr; gap: 1.25rem; }
+		}
+
+		.panel {
+			padding: 1.25rem;
+			background: var(--panel);
+			border-radius: 0.75rem;
+			border: 1px solid var(--border);
+			font-size: 0.95rem;
+		}
+		.panel + .panel { margin-top: 1rem; }
+
+		form.panel { margin: 0; }
+		label { display: block; margin-top: 1rem; font-size: 0.9rem; color: var(--muted); }
+		input[type="text"], input[type="number"] {
+			width: 100%;
+			padding: 0.6rem 0.75rem;
+			margin-top: 0.35rem;
+			border-radius: 0.5rem;
+			border: 1px solid #1f2937;
+			background: var(--panel);
+			color: var(--text);
+		}
+		input[type="text"]:focus, input[type="number"]:focus {
+			outline: none;
+			border-color: var(--focus);
+			box-shadow: 0 0 0 1px var(--focus);
+		}
 		.mode-group { margin-top: 1rem; }
-		.mode-title { display: block; font-size: 0.9rem; color: #9ca3af; margin-bottom: 0.4rem; }
-		.mode-option { display: block; margin-top: 0.25rem; font-size: 0.85rem; }
-		.mode-option input { margin-right: 0.35rem; }
+		.mode-title { display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 0.4rem; }
+		.mode-option { display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.4rem; font-size: 0.9rem; color: var(--text); }
+		.mode-option input { margin-top: 0.15rem; }
+
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 0.5rem;
+			padding: 0.65rem 1rem;
+			border-radius: 999px;
+			border: 1px solid var(--border);
+			background: var(--panel);
+			color: var(--text);
+			font-weight: 600;
+			cursor: pointer;
+			text-decoration: none;
+		}
+		.btn:hover { filter: brightness(1.05); }
+		.btn:focus { outline: none; box-shadow: 0 0 0 1px var(--focus); }
+		.btn-primary {
+			border: none;
+			background: linear-gradient(to right, #0ea5e9, #22c55e);
+			color: var(--panel);
+		}
+		.btn-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+		.btn-row .btn { flex: 1 1 14rem; }
+		@media (max-width: 420px) {
+			.btn-row .btn { flex: 1 1 100%; }
+		}
+
+		.result { font-size: 0.95rem; }
+		.error { color: var(--err); }
+		.ok { color: var(--ok); }
+		code {
+			font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+			font-size: 0.85rem;
+			word-break: break-word;
+		}
 		table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
-		th, td { text-align: left; padding: 0.35rem 0.4rem; border-bottom: 1px solid #1e293b; vertical-align: top; }
-		th { color: #9ca3af; font-weight: 600; font-size: 0.85rem; }
-		.small { color: #9ca3af; font-size: 0.85rem; }
+		th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+		th { color: var(--muted); font-weight: 600; font-size: 0.85rem; }
+		.small { color: var(--muted); font-size: 0.85rem; }
+		.table-wrap { overflow-x: auto; }
   </style>
 </head>
 <body>
-  <h1>Concurrent Web Crawler</h1>
-  <p>Run a crawl with custom URL, worker count, and depth.</p>
-
-  <form method="POST" action="/crawl">
-    <label>
-      Seed URL or domain
-      <input type="text" name="url" value="{{.URL}}" placeholder="e.g. https://example.com or google.com" required />
-    </label>
-
-    <label>
-      Workers
-      <input type="number" name="workers" min="1" max="128" value="{{.Workers}}" />
-    </label>
-
-    <label>
-      Max depth
-      <input type="number" name="depth" min="0" max="8" value="{{.Depth}}" />
-    </label>
-
-		<div class="mode-group">
-			<span class="mode-title">Use case</span>
-			<label class="mode-option">
-				<input type="radio" name="mode" value="blogs" {{if eq .Mode "blogs"}}checked{{end}} />
-				1. Track my favourite blogs
-			</label>
-			<label class="mode-option">
-				<input type="radio" name="mode" value="health" {{if eq .Mode "health"}}checked{{end}} />
-				2. Internal Site Health Checker
-			</label>
-			<label class="mode-option">
-				<input type="radio" name="mode" value="search" {{if eq .Mode "search"}}checked{{end}} />
-				3. Data Pipeline Search Index
-			</label>
+	<div class="container">
+		<div class="header">
+			<h1>Concurrent Web Crawler</h1>
+			<p>Run a crawl with custom URL, worker count, and depth.</p>
 		</div>
 
-    <button type="submit">Start crawl</button>
-  </form>
+		<div class="layout">
+			<div>
+				<form class="panel" method="POST" action="/crawl">
+					<label>
+						Seed URL or domain
+						<input type="text" name="url" value="{{.URL}}" placeholder="e.g. https://example.com or google.com" required />
+					</label>
 
-	<div class="result">
-		{{if .Ran}}
-			<div><strong>Result</strong></div>
-			{{if .Error}}
-				<p class="error">Error: {{.Error}}</p>
-			{{else}}
-				<p class="ok">Crawl finished successfully.</p>
-			{{end}}
-			<p><strong>Config</strong></p>
-			<p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}} mode={{.Mode}}</code></p>
-			{{if .Summary}}
-				<p><strong>What this means</strong></p>
-				<p>{{.Summary}}</p>
-			{{end}}
-		{{else}}
-			<div><strong>Result</strong></div>
-			<p>Fill the form and start a crawl to see a summary here.</p>
-		{{end}}
-	</div>
-	<div class="result" id="history-box">
-		<div><strong>History</strong></div>
-		<p class="small">Load past crawl runs from data/crawls.jsonl.</p>
-		<button type="button" id="load-history">Load history</button>
-		<div id="history-content" class="small" style="margin-top: 0.75rem;">Not loaded yet.</div>
+					<label>
+						Workers
+						<input type="number" name="workers" min="1" max="128" value="{{.Workers}}" />
+					</label>
+
+					<label>
+						Max depth
+						<input type="number" name="depth" min="0" max="8" value="{{.Depth}}" />
+					</label>
+
+					<div class="mode-group">
+						<span class="mode-title">Use case</span>
+						<label class="mode-option">
+							<input type="radio" name="mode" value="blogs" {{if eq .Mode "blogs"}}checked{{end}} />
+							<span>1. Track my favourite blogs</span>
+						</label>
+						<label class="mode-option">
+							<input type="radio" name="mode" value="health" {{if eq .Mode "health"}}checked{{end}} />
+							<span>2. Internal Site Health Checker</span>
+						</label>
+						<label class="mode-option">
+							<input type="radio" name="mode" value="search" {{if eq .Mode "search"}}checked{{end}} />
+							<span>3. Data Pipeline Search Index</span>
+						</label>
+					</div>
+
+					<button class="btn btn-primary" type="submit">Start crawl</button>
+				</form>
+			</div>
+
+			<div>
+				<div class="panel result" id="result-box">
+					{{if .Ran}}
+						<div><strong>Result</strong></div>
+						{{if .Error}}
+							<p class="error">Error: {{.Error}}</p>
+						{{else}}
+							<p class="ok">Crawl finished successfully.</p>
+						{{end}}
+						<p><strong>Config</strong></p>
+						<p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}} mode={{.Mode}}</code></p>
+						{{if .Summary}}
+							<p><strong>What this means</strong></p>
+							<p>{{.Summary}}</p>
+						{{end}}
+					{{else}}
+						<div><strong>Result</strong></div>
+						<p>Fill the form and start a crawl to see a summary here.</p>
+					{{end}}
+				</div>
+				<div class="panel" id="history-box">
+					<div><strong>History</strong></div>
+					<p class="small">Load past crawl runs from data/crawls.jsonl.</p>
+					<button class="btn" type="button" id="load-history">Load history</button>
+					<div id="history-content" class="small" style="margin-top: 0.75rem;">Not loaded yet.</div>
+				</div>
+			</div>
+		</div>
 	</div>
 	<script>
 		(function() {
@@ -123,12 +211,8 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 				const depth = parseInt(formData.get('depth') || '2', 10);
 				const mode = formData.get('mode') || 'blogs';
 
-				let resultBox = document.querySelector('.result');
-				if (!resultBox) {
-					resultBox = document.createElement('div');
-					resultBox.className = 'result';
-					form.insertAdjacentElement('afterend', resultBox);
-				}
+				let resultBox = document.getElementById('result-box');
+				if (!resultBox) return;
 				resultBox.innerHTML = '<div><strong>Result</strong></div><p>Running crawl...</p>';
 
 				try {
@@ -277,12 +361,15 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 						html += '</ol>';
 					}
 
+
 					// Download buttons for structured analytics
 					html += '<p><strong>Download data</strong></p>';
-					html += '<button type="button" id="download-json">Download analytics (JSON)</button> ';
-					html += '<button type="button" id="download-csv">Download pages (CSV)</button> ';
-					html += '<button type="button" id="download-titles">Download titles (TXT)</button> ';
-					html += '<button type="button" id="download-titles-csv">Download titles (CSV)</button>';
+					html += '<div class="btn-row">';
+					html += '<button class="btn" type="button" id="download-json">Download analytics (JSON)</button>';
+					html += '<button class="btn" type="button" id="download-csv">Download pages (CSV)</button>';
+					html += '<button class="btn" type="button" id="download-titles">Download titles (TXT)</button>';
+					html += '<button class="btn" type="button" id="download-titles-csv">Download titles (CSV)</button>';
+					html += '</div>';
 
 					resultBox.innerHTML = html;
 
@@ -414,7 +501,7 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 							return bd - ad;
 						});
 
-						let html = '<table><thead><tr>' +
+						let html = '<div class="table-wrap"><table><thead><tr>' +
 							'<th>Finished</th><th>URL</th><th>Mode</th><th>Parsed</th><th>Words</th><th>Largest</th><th>Error</th>' +
 							'</tr></thead><tbody>';
 						crawls.slice(0, 20).forEach(function(c) {
@@ -436,7 +523,7 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 								'<td class="small">' + err + '</td>' +
 							'</tr>';
 						});
-						html += '</tbody></table>';
+						html += '</tbody></table></div>';
 						historyContent.innerHTML = html;
 					} catch (e) {
 						historyContent.textContent = 'Failed to load history: ' + e;
