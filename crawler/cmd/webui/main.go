@@ -129,6 +129,9 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					});
 					const data = await res.json();
 
+					const stats = data.stats || {};
+					const summary = data.summary || {};
+
 					let html = '<div><strong>Result</strong></div>';
 					if (data.error) {
 						html += '<p class="error">Error: ' + data.error + '</p>';
@@ -138,10 +141,49 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					html += '<p><strong>Config</strong></p>';
 					html += '<p><code>url=' + (data.url || url) + ' workers=' + workers + ' depth=' + depth + ' mode=' + (data.mode || mode) + '</code></p>';
 
-					if (data.summary && data.summary.message) {
+					if (summary && summary.message) {
 						html += '<p><strong>What this means</strong></p>';
-						html += '<p>' + data.summary.message + '</p>';
+						html += '<p>' + summary.message + '</p>';
 					}
+
+					// Detailed numeric stats from the crawl
+					html += '<p><strong>Detailed stats</strong></p>';
+					html += '<ul>';
+					html += '<li>Total requests: ' + (stats.totalRequests || 0) + '</li>';
+					html += '<li>2xx successes: ' + (stats.success2xx || 0) + '</li>';
+					html += '<li>4xx client errors: ' + (stats.clientError4xx || 0) + '</li>';
+					html += '<li>5xx server errors: ' + (stats.serverError5xx || 0) + '</li>';
+					html += '<li>Other status codes: ' + (stats.otherStatus || 0) + '</li>';
+					html += '<li>Network errors: ' + (stats.networkErrors || 0) + '</li>';
+					if (stats.lastStatusCode) {
+						html += '<li>Last status code: ' + stats.lastStatusCode + '</li>';
+					}
+					if (stats.lastURL) {
+						html += '<li>Last URL: ' + stats.lastURL + '</li>';
+					}
+					html += '</ul>';
+
+					// Use-case specific fields (options 1, 2, 3)
+					html += '<p><strong>Use-case details</strong></p>';
+					html += '<ul>';
+					const modeValue = summary.mode || data.mode || mode;
+					html += '<li>Mode: ' + modeValue + '</li>';
+					if (typeof summary.checkedPages === 'number') {
+						html += '<li>Pages checked: ' + summary.checkedPages + '</li>';
+					}
+					if (typeof summary.isReachable === 'boolean') {
+						html += '<li>Reachable (blogs use case): ' + (summary.isReachable ? 'yes' : 'no') + '</li>';
+					}
+					if (typeof summary.isHealthy === 'boolean') {
+						html += '<li>Site healthy (health checker): ' + (summary.isHealthy ? 'yes' : 'no') + '</li>';
+					}
+					if (typeof summary.isIndexable === 'boolean') {
+						html += '<li>Good for indexing (search index): ' + (summary.isIndexable ? 'yes' : 'no') + '</li>';
+					}
+					if (summary.primaryStatus) {
+						html += '<li>Primary status code: ' + summary.primaryStatus + '</li>';
+					}
+					html += '</ul>';
 
 					resultBox.innerHTML = html;
 				} catch (err) {
