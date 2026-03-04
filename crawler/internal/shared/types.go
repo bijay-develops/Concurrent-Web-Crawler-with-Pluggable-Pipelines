@@ -166,7 +166,11 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 		case has5xx:
 			msg = "The blog server is returning 5xx errors, so it may be temporarily down."
 		case has4xx && !hasSuccess:
-			msg = "We only saw 4xx client errors (like 404). Check that the blog URL is correct."
+			if v.LastStatusCode != 0 {
+				msg = fmt.Sprintf("We only saw 4xx client errors (for example, %d %s). Check that the blog URL is correct.", v.LastStatusCode, http.StatusText(v.LastStatusCode))
+			} else {
+				msg = "We only saw 4xx client errors (like 404). Check that the blog URL is correct."
+			}
 		case hasSuccess && has4xx:
 			msg = fmt.Sprintf("We reached %d page(s) successfully, but some returned 4xx errors.", v.Success2xx)
 		default:
@@ -181,11 +185,23 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 		case hasNetwork:
 			msg = "Network or TLS errors prevented a complete health check."
 		case has5xx:
-			msg = "We saw 5xx server errors. The site has availability issues."
+			if v.LastStatusCode != 0 {
+				msg = fmt.Sprintf("We saw 5xx server errors (for example, %d %s). The site has availability issues.", v.LastStatusCode, http.StatusText(v.LastStatusCode))
+			} else {
+				msg = "We saw 5xx server errors. The site has availability issues."
+			}
 		case has4xx && !hasSuccess:
-			msg = "Only 4xx client errors were seen. Many links may be broken or protected."
+			if v.LastStatusCode != 0 {
+				msg = fmt.Sprintf("Only 4xx client errors were seen (for example, %d %s). Many links may be broken or protected.", v.LastStatusCode, http.StatusText(v.LastStatusCode))
+			} else {
+				msg = "Only 4xx client errors were seen. Many links may be broken or protected."
+			}
 		case has4xx:
-			msg = "Most pages responded, but some returned 4xx errors (broken or restricted URLs)."
+			if v.LastStatusCode != 0 {
+				msg = fmt.Sprintf("Most pages responded, but some returned 4xx errors (for example, %d %s).", v.LastStatusCode, http.StatusText(v.LastStatusCode))
+			} else {
+				msg = "Most pages responded, but some returned 4xx errors (broken or restricted URLs)."
+			}
 		default:
 			msg = "All checked pages responded without major server errors. The site looks healthy."
 		}
@@ -211,9 +227,17 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 		case hasNetwork:
 			msg = "Network or TLS errors occurred while crawling."
 		case has5xx:
-			msg = "Server responded with 5xx errors for some requests."
+			if v.LastStatusCode != 0 {
+				msg = fmt.Sprintf("Server responded with 5xx errors for some requests (for example, %d %s).", v.LastStatusCode, http.StatusText(v.LastStatusCode))
+			} else {
+				msg = "Server responded with 5xx errors for some requests."
+			}
 		case has4xx:
-			msg = "Client-side 4xx errors were seen (for example, 404 or 403)."
+			if v.LastStatusCode != 0 {
+				msg = fmt.Sprintf("Client-side 4xx errors were seen (for example, %d %s).", v.LastStatusCode, http.StatusText(v.LastStatusCode))
+			} else {
+				msg = "Client-side 4xx errors were seen (for example, 404 or 403)."
+			}
 		default:
 			msg = "We saw successful responses without major errors."
 		}

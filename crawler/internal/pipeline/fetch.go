@@ -38,6 +38,11 @@ func FetchWorker(
 				continue
 			}
 
+			// Send a more descriptive User-Agent so that some sites
+			// that block generic bots have a better chance of accepting
+			// the request.
+			req.Header.Set("User-Agent", "ConcurrentWebCrawler/1.0 (+educational example)")
+
 			resp, err := client.Do(req)
 			if err != nil {
 				if stats != nil {
