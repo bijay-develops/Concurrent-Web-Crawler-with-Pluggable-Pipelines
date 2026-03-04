@@ -262,7 +262,10 @@ In [crawler/internal/pipeline/discover.go](crawler/internal/pipeline/discover.go
 - Reads from `parsed`.
 - Calls `tracker.Done()` when a URL is finished.
 - Checks the depth (stops if `Depth >= maxDepth`).
-- Would send newly found URLs into `discovered` (placeholder for now).
+- Schedules newly found internal URLs into `discovered` using `item.DiscoveredURLs` populated by the parse stage.
+   - On listing pages, discovery prefers the main permalink found in each `<article>` card.
+   - Discovered URLs are ordered to prefer post-like permalinks before tag/category/author-like URLs.
+   - The scheduler deduplicates URLs and enforces a max-unique cap (default `40`) to keep crawls conservative.
 
 Picture:
 

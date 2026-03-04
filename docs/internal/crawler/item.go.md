@@ -1,22 +1,25 @@
 # internal/crawler/item.go
 
 ## 1. Overview
-- Purpose: Define the `Item` type representing a single crawl unit.
-- Problem it solves: Encapsulates a target URL and its crawl depth in a single struct.
-- High-level responsibility: Serve as the basic piece of data passed through the crawler and scheduler.
+- Current state: The source file `crawler/internal/crawler/item.go` is currently empty.
+- Where the item type lives now: `crawler/internal/shared/types.go` defines `shared.Item`.
+- Why: The crawler + pipeline share a single `Item` type (URL + depth + response + mode + discovered URLs), so it was moved into `internal/shared`.
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/internal/crawler/item.go`
 
 ## 3. Key Components
-- `type Item struct { URL *url.URL; Depth int; Response *http.Response }`
-	- `URL *url.URL`: Pointer to a parsed URL for the item.
-	- `Depth int`: Current depth of this item in the crawl (e.g., starting URL at depth 0).
-	- `Response *http.Response`: The HTTP response associated with this item once fetched (may be nil before fetching).
+See `shared.Item` in `crawler/internal/shared/types.go`:
+
+- `URL *url.URL`: Target URL.
+- `Depth int`: Crawl depth (seed is depth 0).
+- `Response *http.Response`: Set by the fetch stage.
+- `Mode shared.UseCase`: Selected use case for the crawl.
+- `DiscoveredURLs []string`: Absolute URLs discovered during parse, consumed by the discover stage.
 
 ## 4. Execution Flow
-- `Item` is a data container and does not define its own control flow.
-- It is expected to be created by producer code and passed through channels and pipeline stages.
+- `shared.Item` is a data container and does not define its own control flow.
+- It is created by the seeder and discover stage, deduped by the scheduler, populated by fetch/parse stages, then recycled back into scheduling.
 
 ## 5. Data Flow
 - **Inputs**
@@ -27,6 +30,7 @@
 	- `Item` values flowing between internal components.
 - **Dependencies**
 	- `net/url` and `net/http` from the standard library.
+	- Internal: `crawler/internal/shared`.
 
 ## 6. Mermaid Diagrams
 ```mermaid
@@ -42,11 +46,11 @@ flowchart LR
 ## 8. Example Usage
 ```go
 u, _ := url.Parse("https://example.com")
-item := crawler.Item{URL: u, Depth: 0}
+item := shared.Item{URL: u, Depth: 0, Mode: shared.UseCaseTrackBlogs}
 // Response is populated by fetch workers in the pipeline.
 ```
 
 ### Notes
-#### Why a pointer to url.URL?
+#### Why a pointer to `url.URL`?
 - Parsing once avoids repeated allocations.
 - Ownership is clear.

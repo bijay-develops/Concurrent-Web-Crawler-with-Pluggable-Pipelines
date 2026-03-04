@@ -9,26 +9,29 @@
 - Relative path (from repo root): `crawler/internal/crawler/scheduler.go`
 
 ## 3. Key Components
-- `type Schedular struct`
+- `type Scheduler struct`
   - Holds a `seen` map from URL string to empty struct and a `sync.Mutex` `mu` to guard concurrent access.
-- `func NewSchedular() *Schedular`
-  - Constructor that initializes the `seen` map.
-- `func (s *Schedular) Schedule(ctx context.Context, in <-chan Item, out chan<- Item)`
+- Option: `maxUnique` (passed to `NewScheduler`) caps the number of unique URLs scheduled in a single crawl.
+- `func NewScheduler(maxUnique int) *Scheduler`
+  - Constructor that initializes the `seen` map and sets the max-unique cap.
+- `func (s *Scheduler) Schedule(ctx context.Context, in <-chan shared.Item, out chan<- shared.Item, tracker *shared.WorkTracker)`
   - Main scheduling loop.
   - Listens on the input channel and forwards only unseen items to the output channel, respecting context cancellation.
+  - If `tracker` is provided, duplicates (and items dropped due to the max-unique cap) call `tracker.Done()` so work accounting stays correct.
 
 ## 4. Execution Flow
-1. A `Schedular` instance is created via `NewSchedular`.
-2. `Run` is invoked with a context, an input channel of `Item`, and an output channel of `Item`.
+1. A `Scheduler` instance is created via `NewScheduler(maxUnique)`.
+2. `Schedule` is invoked with a context, an input channel of `shared.Item`, and an output channel of `shared.Item`.
 3. Inside an infinite loop, `Schedule` selects on:
    - `ctx.Done()`: exits immediately when the context is canceled.
    - `in` channel:
-     - If the channel is closed (`ok == false`), `Run` returns.
+     - If the channel is closed (`ok == false`), `Schedule` returns.
      - Otherwise, it receives an `Item`.
 4. For each received item, `Schedule`:
   - Converts `item.URL` to a string key.
   - Checks and updates the `seen` map under the mutex.
   - Discards items whose URL has already been seen.
+  - Discards new items once `maxUnique` unique URLs have been scheduled (if `maxUnique > 0`).
   - Sends unseen items to `out`, again respecting context cancellation.
 
 ## 5. Data Flow
@@ -44,7 +47,7 @@
 - **Dependencies**
   - `context` for cancellation.
   - `sync` for `Mutex`.
-  - Local `Item` type from `internal/crawler/item.go`.
+  - `crawler/internal/shared` for `shared.Item` and `shared.WorkTracker`.
 
 ## 6. Mermaid Diagrams
 ```mermaid
@@ -59,18 +62,19 @@ flowchart TD
 - No explicit error values are returned; control flow is driven by context and channel closure.
 - If `ctx` is canceled, `Run` stops promptly without draining `in`.
 - If `in` is closed, `Run` returns after processing remaining buffered values (if any).
-- The `seen` map grows without bound; in long-running crawls, additional eviction logic might be required.
+- The `seen` map is bounded by `maxUnique` when set (the crawler sets this to `maxPages`).
 
 ## 8. Example Usage
 ```go
-sched := crawler.NewSchedular()
+sched := crawler.NewScheduler(40)
 ctx, cancel := context.WithCancel(context.Background())
 defer cancel()
 
-in := make(chan crawler.Item)
-out := make(chan crawler.Item)
+tracker := &shared.WorkTracker{}
+in := make(chan shared.Item)
+out := make(chan shared.Item)
 
-go sched.Run(ctx, in, out)
+go sched.Schedule(ctx, in, out, tracker)
 
 // Send items into in, read unique items from out.
 ```

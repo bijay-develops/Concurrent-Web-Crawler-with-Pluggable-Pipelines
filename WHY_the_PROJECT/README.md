@@ -122,7 +122,7 @@ This project is a good choice if you care about:
    - Entry points live in `cmd/crawler` (CLI), `cmd/webui` (Web UI + API), and `cmd/api` (API only).
 
 2. **Structured concurrency and backpressure**
-   - Worker pools, channels, and a scheduler (`Schedular`) control how many URLs are in flight.
+   - Worker pools, channels, and a scheduler (`Scheduler`) control how many URLs are in flight.
    - Depth and deduplication logic reduce unnecessary work.
 
 3. **Per-domain rate limiting**
@@ -134,7 +134,7 @@ This project is a good choice if you care about:
    - You can implement or replace their logic without changing how the core crawler schedules work.
 
 5. **Extensibility toward production-grade crawling**
-   - Even though some stages are intentionally minimal or skeletal, the **structure** matches what you need for:
+   - The implementation is intentionally conservative by default (rate limiting + max-pages cap), but the **structure** matches what you need for:
      - Analytics crawlers
      - SEO crawlers
      - Monitoring crawlers

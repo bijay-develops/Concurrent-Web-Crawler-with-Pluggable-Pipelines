@@ -75,3 +75,4 @@ Concurrent-Web-Crawler-with-Pluggable-Pipelines/
   7. Error Handling & Edge Cases
   8. Example Usage
 - Where a source file is currently empty, the documentation explicitly notes that and only describes the intended role implied by its name and placement.
+- Some files may remain empty/legacy after refactors (for example `internal/crawler/item.go`); in those cases the docs point you at the new canonical type/location.

@@ -1,54 +1,72 @@
+````markdown
 # internal/pipeline/parse.go
 
 ## 1. Overview
-- Purpose: Implement a simple "parse" stage of the pipeline that currently just closes HTTP response bodies and forwards items downstream.
-- Current state: The file defines a `ParseWorker` that acts as a pass-through cleanup stage.
-- High-level responsibility: Ensure `item.Response.Body` is closed (if present) and propagate items to the next stage.
+- Purpose: Parse HTML responses into lightweight analytics (title, word count, link counts, keywords/topics) and extract internal links for discovery.
+- Current state: Implemented. The `ParseWorker` performs best-effort DOM parsing and populates `Item.DiscoveredURLs` for the discover stage.
+- High-level responsibility:
+  - Be polite and safe: only parse HTML-like responses and read a bounded amount of bytes.
+  - Derive useful page metrics for the stats collector.
+  - Feed conservative internal links back into the crawl loop.
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/internal/pipeline/parse.go`
 
 ## 3. Key Components
-- `func ParseWorker(ctx context.Context, in <-chan crawler.Item, out chan<- crawler.Item)`
-  - Worker loop that:
-    - Reads `crawler.Item` values from `in`.
-    - If `item.Response` is non-nil, closes `item.Response.Body` to free resources.
-    - Forwards the item to `out`, or returns early if `ctx` is canceled.
+- `func ParseWorker(ctx, in, out, stats)`
+  - Reads `shared.Item` values with `Response` set by fetch.
+  - Skips non-HTML responses based on `Content-Type`.
+  - Reads a bounded amount of HTML bytes per page (currently 4 MiB cap).
+  - Calls `extractPageMetrics(url, body)` to compute:
+    - `title`
+    - `wordCount`
+    - `internalLinks`, `externalLinks`
+    - `keywords`
+    - `discovered` internal URLs
+  - Populates `item.DiscoveredURLs = discovered`.
+  - Records page metrics + topics into `stats` if present.
 
-## 4. Execution Flow
-1. Fetch workers write `crawler.Item` values with populated `Response` fields to a "fetched" channel.
-2. One or more `ParseWorker` goroutines read from that channel.
-3. For each `Item`, the worker closes `item.Response.Body` if `item.Response` is not nil.
-4. The item is forwarded to the next stage via `out` (e.g., discovery).
-5. If `ctx` is canceled or `in` is closed, the worker returns.
+- `func extractPageMetrics(pageURL, body)`
+  - Parses the HTML DOM (`golang.org/x/net/html`).
+  - Extracts `<title>` from the full document.
+  - Prefers visible text from `<main>` (then `<article>`, then whole doc) while skipping non-content regions (`nav`, `header`, `footer`, `aside`, scripts/styles).
+  - Extracts and counts internal/external links.
+  - Builds a conservative list of discovered internal URLs (see below).
+  - Falls back to a regex-based extractor if DOM parsing fails.
+
+## 4. Discovery Rules (in parse)
+Discovery is conservative (it aims to find real content pages, not internal UI routes):
+
+- Only same-host links are considered.
+- Most query-string links are rejected (tracking-only queries may be normalized away).
+- Common non-content areas are avoided (`/tag/`, `/category/`, `/author/`, `/wp-json/`, `/wp-admin/`, feeds, login/subscribe) except safe pagination.
+- Common binary/asset extensions are excluded.
+- “Post-like” paths are preferred (slug-like or date-based permalinks).
+- On listing pages (multiple `<article>` elements), the parser prefers a single best permalink per `<article>` card and suppresses other `<article>`-internal links from discovery to reduce noise.
 
 ## 5. Data Flow
-- **Inputs**
-  - `crawler.Item` values with (optional) HTTP responses from the fetched channel.
-- **Processing steps**
-  - Close response bodies to avoid leaks.
-  - (Future) Perform actual parsing of content if needed.
-- **Outputs**
-  - `crawler.Item` values forwarded to the downstream channel.
-- **Dependencies**
-  - Standard library: `context`.
-  - Internal: `crawler/internal/crawler` for `Item`.
+- **Input:** `shared.Item` with `Response`.
+- **Output:** `shared.Item` with `Response` cleared (body closed) and `DiscoveredURLs` populated.
+- **Side effects:** updates to `shared.CrawlStats`.
 
-## 6. Mermaid Diagrams
+## 6. Mermaid Diagram
 ```mermaid
 flowchart LR
-  A["Fetched items with Response"] --> B["ParseWorker goroutines"]
-  B --> C["Items with closed Response bodies"]
+  A["Fetched item + Response"] --> B["ParseWorker"]
+  B --> C["Item + DiscoveredURLs"]
+  B --> D["Stats: title/words/links/keywords"]
 ```
 
 ## 7. Error Handling & Edge Cases
-- If `in` is closed, the worker returns after draining remaining buffered items.
-- If `ctx` is canceled, the worker returns promptly.
-- Closing `item.Response.Body` is guarded by a nil check to avoid panics.
+- Non-HTML responses are skipped (body closed, item forwarded).
+- HTML reads are bounded to avoid memory spikes.
+- DOM parsing failures fall back to a conservative regex approach.
 
 ## 8. Example Usage
-```go
-parsed := make(chan crawler.Item)
+The core crawler wires the stage like:
 
-go pipeline.ParseWorker(ctx, fetched, parsed)
+```go
+go pipeline.ParseWorker(ctx, fetched, parsed, stats)
 ```
+
+````

@@ -5,6 +5,8 @@
 - Problem it solves: Centralizes accounting for how many crawl items are currently being processed so the crawler can know when to shut down.
 - High-level responsibility: Wrap `sync.WaitGroup` with a small API that the crawler and workers use to signal work start and completion.
 
+Note: The current crawler implementation uses `shared.WorkTracker` (`crawler/internal/shared/types.go`). This file still defines `crawler.WorkTracker`, but it is effectively a legacy copy.
+
 ## 2. File Location
 - Relative path (from repo root): `crawler/internal/crawler/work.go`
 
@@ -35,8 +37,10 @@
 
 ## 6. Mermaid Diagrams
 ```mermaid
-flowchart TD
-  A["Planned work-related code"] --> B["Not implemented yet"]
+flowchart LR
+  A["Add(n)"] --> B["WaitGroup counter += n"]
+  C["Done()"] --> D["WaitGroup counter -= 1"]
+  E["Wait()"] --> F["Block until counter == 0"]
 ```
 
 ## 7. Error Handling & Edge Cases

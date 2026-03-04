@@ -165,10 +165,15 @@ This will:
 
 ## 7. Notes and limitations
 
-- The current implementation fetches the seed URL and processes it through the pipeline.
-- The `DiscoverWorker` stage is a placeholder; it does not yet extract and enqueue links, so the crawler does not recursively explore the full site.
-- Rate limiting is applied per domain via the `DomainLimiter` in the fetch stage.
-- Crawl summaries (stats + human-friendly mode-specific summary) are persisted to `crawler/data/crawls.jsonl` and surfaced via the API and Web UI.
- - TLS behavior depends on your local system trust store. If `https://example.com` or another HTTPS URL fails with a certificate error, that indicates an environment trust issue, not a problem with the crawler itself.
+- The crawler fetches the seed URL and can **recursively explore internal links** up to the configured `-depth`.
+  - Discovery is conservative: it prefers post-like permalinks and avoids common noisy internal areas (tag/category/author/archive links except safe pagination).
+  - On listing pages (many `<article>` cards), discovery prefers the “main permalink per card” to keep results cleaner.
+- A global **max unique URLs per crawl** cap is enforced by the scheduler (default `40` in the core crawler). This is intentional to keep demos safe.
+- Rate limiting is applied per domain via `DomainLimiter` in the fetch stage.
+- The parser only attempts HTML analytics for `text/html` / `application/xhtml+xml` and reads a **bounded** amount of HTML per page (currently capped to 4 MiB) to avoid memory spikes.
+- If the server responds with `429 Too Many Requests`, fetch workers briefly back off.
+- Crawl history is appended as JSON Lines to `crawler/data/crawls.jsonl` and surfaced via the API and Web UI.
+  - History reading supports larger records (scanner buffer raised above the default 64 KiB).
+- TLS behavior depends on your local system trust store. If `https://example.com` or another HTTPS URL fails with a certificate error, that indicates an environment trust issue, not a problem with the crawler itself.
 
 This manual should be enough to build and run the CLI, Web UI, and JSON API directly or via Docker for testing and demos.

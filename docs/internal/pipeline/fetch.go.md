@@ -11,18 +11,19 @@
 ## 3. Key Components
 - `func NewHTTPClient(timeout time.Duration) *http.Client`
   - Constructs an `*http.Client` with the provided timeout.
--- `func FetchWorker(ctx context.Context, client *http.Client, limiter *DomainLimiter, in <-chan shared.Item, out chan<- shared.Item, mode shared.UseCase)`
+- `func FetchWorker(ctx context.Context, client *http.Client, limiter *DomainLimiter, in <-chan shared.Item, out chan<- shared.Item, mode shared.UseCase, stats *shared.CrawlStats)`
   - Worker loop that:
-    - Reads `crawler.Item` values from `in`.
+    - Reads `shared.Item` values from `in`.
     - Uses `limiter.Wait(item.URL.Host)` to enforce per-domain rate limiting.
     - Builds an HTTP GET request with `http.NewRequestWithContext`.
     - Executes the request with `client.Do(req)`.
     - On success, assigns the `*http.Response` to `item.Response`.
+    - Applies polite behavior for `429 Too Many Requests` (brief backoff).
     - Logs a mode-specific message (e.g., `[Blogs]`, `[Health]`, `[SearchIndex]`) using the `mode` parameter so different use cases are visible in logs.
     - Attempts to send the enriched item to `out`, closing the response body and returning early if the context is canceled.
 
 ## 4. Execution Flow
-1. The core crawler enqueues `crawler.Item` values onto a "scheduled" channel.
+1. The core crawler enqueues `shared.Item` values onto a "scheduled" channel.
 2. One or more `FetchWorker` goroutines read from that channel.
 3. For each `Item`:
   - The worker waits on the domain limiter for `item.URL.Host`.
@@ -40,7 +41,7 @@
   - Perform HTTP GET requests using a shared `*http.Client`.
   - Attach the resulting `*http.Response` to each `Item`.
 - **Outputs**
-  - `crawler.Item` values with a populated `Response` field on the fetched channel.
+  - `shared.Item` values with a populated `Response` field on the fetched channel.
 - **Dependencies**
   - Standard library: `context`, `net/http`, `time`.
   - Internal: `crawler/internal/crawler` for `Item`, `DomainLimiter` from `internal/pipeline/limiter.go`.
@@ -63,8 +64,8 @@ flowchart LR
 client := pipeline.NewHTTPClient(10 * time.Second)
 limiter := pipeline.NewDomainLimiter(500 * time.Millisecond)
 
-scheduled := make(chan crawler.Item)
-fetched := make(chan crawler.Item)
+scheduled := make(chan shared.Item)
+fetched := make(chan shared.Item)
 
 go pipeline.FetchWorker(ctx, client, limiter, scheduled, fetched)
 ```

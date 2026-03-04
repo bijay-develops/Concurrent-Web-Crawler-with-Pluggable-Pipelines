@@ -29,7 +29,7 @@
 - `internal/crawler/`
   - Defines the main crawler type (`Crawler`) and its orchestration logic.
   - Provides options like `WithWorkerCount`, `WithMaxDepth`, `WithSeedURL`, and `WithUseCase` as referenced from the entrypoints.
-  - Contains supporting types like `Schedular` and `WorkTracker`.
+  - Contains supporting types like `Scheduler`.
 - `internal/shared/`
   - Defines shared data structures such as `Item`, which now carries the selected **use case** (`UseCaseTrackBlogs`, `UseCaseSiteHealth`, `UseCaseSearchIndex`).
   - Provides `CrawlStats` / `CrawlStatsView` and `ModeSummary` to aggregate and interpret crawl results.
@@ -42,14 +42,16 @@
   - Persists compact `CrawlRecord` summaries as JSON Lines under `crawler/data/crawls.jsonl`.
 - `internal/pipeline/`
   - Hosts pluggable pipeline stages (`discover`, `fetch`, `filter`, `parse`, `store`) and related infrastructure (`interfaces`, `limiter`).
-  - The current implementation focuses on wiring and rate-limiting primitives; most stage files are skeletal and document future responsibilities.
+  - Pipeline stages are implemented and wired end-to-end (fetch → parse → discover → schedule), with conservative discovery and per-domain politeness.
 
 ## High-Level Interactions
 - The CLI, Web UI, and JSON API entrypoints configure and start the crawler through the internal package API and the `CrawlService`.
 - The core crawler coordinates scheduling of crawl work, concurrency, and interaction with pipeline stages.
 - A selected **mode** flows from the entrypoint into `internal/shared.Item` values and is used downstream (for example in the fetch stage and in result summaries) to adapt behavior and messaging.
 - Conceptually, pipeline stages process crawl items in sequence (e.g., discover → fetch → filter → parse → store), with optional limiting; concrete logic is still being built out.
+- Pipeline stages are implemented and wired end-to-end in the core crawler (schedule → fetch → parse → discover → schedule), with conservative discovery and per-domain politeness.
 - After each crawl, aggregated stats and a human-readable `ModeSummary` are stored via the `store.FileStore` so history can be queried over HTTP.
+
 
 ## Mermaid System Diagram
 ```mermaid
@@ -72,4 +74,4 @@ flowchart TD
 
 ## Notes
 - The above diagram reflects the current package layout and function calls in `main.go` and `internal/crawler`.
-- Some pipeline stage files are placeholders; their responsibilities are documented even where implementations are not yet complete.
+- The project is intentionally conservative by default (max unique URLs per crawl is capped) to keep demos safe.

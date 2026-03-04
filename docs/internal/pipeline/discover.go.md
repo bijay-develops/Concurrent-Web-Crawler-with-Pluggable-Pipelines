@@ -1,42 +1,59 @@
 # internal/pipeline/discover.go
 
 ## 1. Overview
-- Purpose: Intended to implement a "discover" stage in the pipeline that finds new crawl targets from existing data.
-- Current state: The file exists but is empty.
-- High-level responsibility (implied): Analyze parsed data or responses to discover additional URLs or items to enqueue.
+- Purpose: Schedule new crawl targets discovered by the parse stage.
+- Current state: Implemented. `DiscoverWorker` reads parsed items and enqueues discovered internal links up to `maxDepth`.
+- High-level responsibility: Turn `Item.DiscoveredURLs` into new `shared.Item` work units while keeping work accounting correct.
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/internal/pipeline/discover.go`
 
 ## 3. Key Components
-- No types, functions, or variables are currently defined.
+- `func DiscoverWorker(ctx, in, out, maxDepth, tracker)`
+  - For each parsed item:
+    - If `item.Depth < maxDepth`, schedules `shared.Item{URL, Depth+1, Mode}` for each discovered URL.
+    - Uses `tracker.Add(1)` *before* enqueueing each child, so the crawl can terminate correctly.
+    - If the scheduler later drops the item as a duplicate (or due to max-pages cap), the scheduler compensates via `tracker.Done()`.
+  - Always calls `tracker.Done()` for the current item after processing.
+
+- `func orderDiscoveredURLs(urls []string) []string`
+  - Reorders discovered URLs so likely “post” permalinks are enqueued before obvious listing pages (e.g., `/tag/`, `/category/`, `/author/`).
 
 ## 4. Execution Flow
-- No executable logic is present yet.
-- Conceptually, this stage would:
-  1. Receive processed items or parsed content.
-  2. Extract new links or related resources.
-  3. Emit new items back into the crawler's scheduling flow.
+1. Receive a parsed `shared.Item` from `in`.
+2. If `item.Depth < maxDepth`:
+  - Order `item.DiscoveredURLs` (post-like first).
+  - For each discovered URL:
+    - `tracker.Add(1)`
+    - Send a child `shared.Item` to `out` with `Depth+1` and same `Mode`.
+3. Mark the current item complete via `tracker.Done()`.
 
 ## 5. Data Flow
-- **Inputs** (planned)
-  - Parsed or processed items.
-- **Processing steps** (planned)
-  - Link or target discovery.
-- **Outputs** (planned)
-  - Newly discovered items for the scheduler.
+- **Inputs**
+  - Parsed items (`shared.Item`) that may carry `DiscoveredURLs`.
+- **Processing steps**
+  - Depth check + ordering + enqueueing children.
+- **Outputs**
+  - New candidate items for the scheduler.
 - **Dependencies**
-  - Will likely depend on shared item types and parsing results.
+  - Standard library: `net/url`, `strings`.
+  - Internal: `crawler/internal/shared`.
 
 ## 6. Mermaid Diagrams
 ```mermaid
 flowchart LR
-  A["Parsed item"] --> B["Discover stage (planned)"]
-  B --> C["New crawl items"]
+  A["Parsed Item + DiscoveredURLs"] --> B["DiscoverWorker"]
+  B --> C["Child Items (Depth+1)"]
 ```
 
 ## 7. Error Handling & Edge Cases
-- None currently, as the file is empty.
+- Invalid discovered URLs are skipped.
+- If `ctx` is canceled while enqueueing children, the worker undoes bookkeeping for the current item and the pending child.
 
 ## 8. Example Usage
-- No examples yet; this stage will be wired into the pipeline once implemented.
+Wired from `Crawler.Run`:
+
+```go
+go pipeline.DiscoverWorker(ctx, parsed, discovered, maxDepth, tracker)
+go scheduler.Schedule(ctx, discovered, scheduled, tracker)
+```

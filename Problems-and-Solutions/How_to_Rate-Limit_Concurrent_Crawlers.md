@@ -6,6 +6,8 @@ Rate limiting prevents:
 * Getting blocked
 * Breaking terms of service
 
+Project note: this repository’s implementation uses a per-domain “scheduled time” limiter (no `time.Ticker` goroutines) in `crawler/internal/pipeline/limiter.go`.
+
 ---
 
 ## A. Rate Limiting Using `time.Ticker` (Most Common)

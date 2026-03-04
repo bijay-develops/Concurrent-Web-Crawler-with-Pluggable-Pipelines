@@ -1,27 +1,24 @@
 # internal/pipeline/store.go
 
 ## 1. Overview
-- Purpose: Intended to implement the "store" stage of the pipeline that persists crawl results.
-- Current state: The file exists in `internal/pipeline` but is empty; this document describes the planned role.
-- High-level responsibility (implied): Take parsed data or enriched items and write them to a storage backend.
+- Purpose: Provide a simple "store" abstraction and a minimal implementation.
+- Current state: Implements `LogStore`, which logs that an item was stored.
+- High-level responsibility: Demonstrate where persistence would go (file, DB, queue, etc.).
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/internal/pipeline/store.go`
 
-## 3. Key Components (Planned)
-- Functions or workers that:
-  - Read parsed items or domain objects from an input channel.
-  - Serialize and persist them (e.g., to files, databases, or message queues).
-  - Optionally handle batching and backpressure from the storage layer.
+## 3. Key Components
+- `type LogStore struct{}`
+  - Implements `Store(ctx, item) error` and logs `item.URL`.
 
-## 4. Execution Flow (Planned)
-1. Upstream stages (parse, discover) emit results to a "store" channel.
-2. Store workers read from that channel.
-3. Each worker persists the data and optionally reports metrics.
+## 4. Execution Flow
+This project does not currently wire a dedicated store worker into the core crawl loop.
+The HTTP service persists *crawl summaries* via `internal/store` (JSONL history).
 
-## 5. Data Flow (Planned)
+## 5. Data Flow
 - **Inputs**
-  - Parsed or enriched crawl results.
+  - `shared.Item` values or parsed results (depending on your design).
 - **Processing steps**
   - Transform results into a storable format.
   - Write to the configured backend.
@@ -33,13 +30,16 @@
 ## 6. Mermaid Diagrams (Conceptual)
 ```mermaid
 flowchart LR
-  A["Parsed / discovered data"] --> B["Store workers (planned)"]
+  A["Parsed / discovered data"] --> B["Store workers"]
   B --> C["Persisted results"]
 ```
 
-## 7. Error Handling & Edge Cases (Planned)
+## 7. Error Handling & Edge Cases
 - Storage failures should be retried or surfaced without crashing the entire crawler.
 - Backpressure from slow storage backends may need to propagate upstream.
 
 ## 8. Example Usage
-- No concrete API exists yet; once implemented, this stage will be invoked from the core crawler's pipeline wiring.
+```go
+var s pipeline.LogStore
+_ = s.Store(ctx, item)
+```
