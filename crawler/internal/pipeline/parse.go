@@ -81,7 +81,7 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 			name := strings.ToLower(n.Data)
 			// Skip non-content sections entirely.
 			switch name {
-			case "script", "style", "noscript", "head":
+			case "script", "style", "noscript", "head", "header", "footer", "nav", "aside":
 				return
 			case "title":
 				if title == "" {
@@ -131,7 +131,7 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 	if joined != "" {
 		words := strings.Fields(joined)
 		wordCount = len(words)
-		keywords = topKeywords(words, 5)
+		keywords = topKeywords(words, 10)
 	}
 
 	return title, wordCount, internalLinks, externalLinks, keywords
@@ -184,7 +184,9 @@ func topKeywords(words []string, limit int) []string {
 	if len(words) == 0 || limit <= 0 {
 		return nil
 	}
-	counts := make(map[string]int)
+
+	// Normalize and filter tokens first.
+	clean := make([]string, 0, len(words))
 	for _, w := range words {
 		w = strings.Trim(w, " ,.!?:;\"'()[]{}<>")
 		if w == "" {
@@ -210,19 +212,40 @@ func topKeywords(words []string, limit int) []string {
 		if _, skip := stopwords[lw]; skip {
 			continue
 		}
-		counts[lw]++
+		clean = append(clean, lw)
 	}
-	if len(counts) == 0 {
+	if len(clean) == 0 {
 		return nil
 	}
+
+	counts := make(map[string]int)
+	// Unigrams
+	for _, tok := range clean {
+		counts[tok]++
+	}
+	// Simple bigrams: "bible verses", "christian blog", etc.
+	for i := 0; i+1 < len(clean); i++ {
+		phrase := clean[i] + " " + clean[i+1]
+		counts[phrase]++
+	}
+
+	// Require a minimum frequency so we only keep true themes.
+	const minFreq = 2
 	type pair struct {
 		k string
 		c int
 	}
 	items := make([]pair, 0, len(counts))
 	for k, c := range counts {
+		if c < minFreq {
+			continue
+		}
 		items = append(items, pair{k: k, c: c})
 	}
+	if len(items) == 0 {
+		return nil
+	}
+
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].c == items[j].c {
 			return items[i].k < items[j].k
