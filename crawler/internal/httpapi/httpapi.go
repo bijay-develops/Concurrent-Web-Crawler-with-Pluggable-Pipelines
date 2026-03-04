@@ -41,6 +41,7 @@ type startCrawlResponse struct {
 	Mode    string                `json:"mode"`
 	Stats   shared.CrawlStatsView `json:"stats"`
 	Summary shared.ModeSummary    `json:"summary"`
+	Pages   []shared.PageRecord   `json:"pages"`
 	Error   string                `json:"error,omitempty"`
 }
 
@@ -89,6 +90,7 @@ func (h *Handler) handleStartCrawl(w http.ResponseWriter, r *http.Request) {
 		Mode:    string(resp.Mode),
 		Stats:   resp.Stats,
 		Summary: resp.Summary,
+		Pages:   resp.Pages,
 		Error:   resp.Err,
 	}
 

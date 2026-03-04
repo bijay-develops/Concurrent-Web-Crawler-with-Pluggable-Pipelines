@@ -32,7 +32,7 @@ func ParseWorker(
 				if err == nil && len(body) > 0 {
 					title, wordCount, internalLinks, externalLinks, keywords := extractPageMetrics(item.URL, body)
 					if stats != nil {
-						stats.RecordPageMetrics(item.URL.String(), title, wordCount, internalLinks, externalLinks)
+						stats.RecordPageMetrics(item.URL.String(), title, wordCount, internalLinks, externalLinks, keywords)
 						stats.RecordTopics(title, keywords)
 					}
 				}
@@ -92,9 +92,14 @@ func stripHTMLTags(s string) string {
 	return clean
 }
 
-// Basic English stopwords to avoid boring topics.
+// Basic English stopwords to avoid boring topics. This also includes
+// a few layout/CSS-related words that often leak into text content
+// and are not meaningful as themes (for example, "none", "solid",
+// "important").
 var stopwords = map[string]struct{}{
 	"the": {}, "and": {}, "for": {}, "with": {}, "that": {}, "this": {}, "you": {}, "your": {}, "are": {}, "was": {}, "were": {}, "from": {}, "have": {}, "has": {}, "had": {}, "but": {}, "his": {}, "her": {}, "she": {}, "him": {}, "our": {}, "their": {}, "they": {}, "them": {}, "not": {}, "just": {}, "about": {}, "into": {}, "when": {}, "what": {}, "how": {}, "why": {}, "can": {}, "will": {}, "would": {}, "could": {}, "should": {}, "on": {}, "in": {}, "to": {}, "of": {}, "at": {}, "as": {}, "it": {}, "is": {}, "a": {}, "an": {},
+	// extra noise words we do not want as topics
+	"none": {}, "solid": {}, "important": {},
 }
 
 func topKeywords(words []string, limit int) []string {
@@ -109,6 +114,19 @@ func topKeywords(words []string, limit int) []string {
 		}
 		lw := strings.ToLower(w)
 		if len(lw) < 4 { // skip very short words
+			continue
+		}
+		// Skip any token that contains non-letter characters (digits,
+		// punctuation, etc.) so we avoid CSS classes or IDs like
+		// "kt-inner-columns" or "1024px".
+		isAlpha := true
+		for _, ch := range lw {
+			if ch < 'a' || ch > 'z' {
+				isAlpha = false
+				break
+			}
+		}
+		if !isAlpha {
 			continue
 		}
 		if _, skip := stopwords[lw]; skip {

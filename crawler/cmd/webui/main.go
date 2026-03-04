@@ -131,6 +131,7 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 
 					const stats = data.stats || {};
 					const summary = data.summary || {};
+					const pages = Array.isArray(data.pages) ? data.pages : [];
 
 					let html = '<div><strong>Result</strong></div>';
 					if (data.error) {
@@ -218,9 +219,64 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 							html += '<li>' + line + '</li>';
 						});
 						html += '</ul>';
+					} else {
+						html += '<p><strong>Top themes / topics</strong></p><p>No clear topics detected yet.</p>';
 					}
 
+					// Download buttons for structured analytics
+					html += '<p><strong>Download data</strong></p>';
+					html += '<button type="button" id="download-json">Download analytics (JSON)</button> ';
+					html += '<button type="button" id="download-csv">Download pages (CSV)</button>';
+
 					resultBox.innerHTML = html;
+
+					// Wire up download buttons after rendering.
+					const dlJson = document.getElementById('download-json');
+					if (dlJson) {
+						dlJson.addEventListener('click', function () {
+							const blob = new Blob([JSON.stringify({
+								url: data.url || url,
+								mode: data.mode || mode,
+								stats,
+								summary,
+								pages,
+							}, null, 2)], { type: 'application/json' });
+							const a = document.createElement('a');
+							a.href = URL.createObjectURL(blob);
+							a.download = 'crawl-analytics.json';
+							a.click();
+							URL.revokeObjectURL(a.href);
+						});
+					}
+
+					const dlCsv = document.getElementById('download-csv');
+					if (dlCsv) {
+						dlCsv.addEventListener('click', function () {
+							if (!pages.length) {
+								alert('No page-level data available for this crawl.');
+								return;
+							}
+							const header = ['url','title','wordCount','internalLinks','externalLinks','keywords'];
+							const rows = [header.join(',')];
+							pages.forEach(function(p) {
+								const row = [
+									(p.url || '').replace(/"/g, '""'),
+									(p.title || '').replace(/"/g, '""'),
+									p.wordCount || 0,
+									p.internalLinks || 0,
+									p.externalLinks || 0,
+									Array.isArray(p.keywords) ? p.keywords.join(';').replace(/"/g, '""') : ''
+								];
+								rows.push('"' + row.join('","') + '"');
+							});
+							const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+							const a = document.createElement('a');
+							a.href = URL.createObjectURL(blob);
+							a.download = 'crawl-pages.csv';
+							a.click();
+							URL.revokeObjectURL(a.href);
+						});
+					}
 				} catch (err) {
 					if (resultBox) {
 						resultBox.innerHTML = '<div><strong>Result</strong></div><p class="error">Failed to call API: ' + err + '</p>';

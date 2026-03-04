@@ -26,6 +26,7 @@ type StartResponse struct {
 	Stats   shared.CrawlStatsView
 	Summary shared.ModeSummary
 	Err     string
+	Pages   []shared.PageRecord
 }
 
 // CrawlService coordinates running short-lived crawls for API callers.
@@ -86,6 +87,7 @@ func (s *CrawlService) StartCrawl(ctx context.Context, req StartRequest) (StartR
 	}
 
 	view := stats.Snapshot()
+	pages := stats.PagesSnapshot()
 
 	rec := store.CrawlRecord{
 		ID:         time.Now().UTC().Format("20060102T150405.000000000Z07:00"),
@@ -104,5 +106,6 @@ func (s *CrawlService) StartCrawl(ctx context.Context, req StartRequest) (StartR
 		Stats:   view,
 		Summary: shared.SummarizeMode(mode, view),
 		Err:     errStr,
+		Pages:   pages,
 	}, nil
 }

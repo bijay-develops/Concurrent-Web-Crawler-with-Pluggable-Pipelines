@@ -69,6 +69,20 @@ type CrawlStats struct {
 	// Lightweight topic aggregation across parsed pages.
 	topicCounts   map[string]int
 	topicExamples map[string][]string
+
+	// Per-page analytics (held in memory for the current crawl only).
+	pages []PageRecord
+}
+
+// PageRecord captures per-page analytics used for exports and
+// detailed inspection in UIs.
+type PageRecord struct {
+	URL           string   `json:"url"`
+	Title         string   `json:"title"`
+	WordCount     int      `json:"wordCount"`
+	InternalLinks int      `json:"internalLinks"`
+	ExternalLinks int      `json:"externalLinks"`
+	Keywords      []string `json:"keywords"`
 }
 
 // CrawlStatsView is an immutable, lock-free snapshot of CrawlStats
@@ -160,8 +174,9 @@ func (s *CrawlStats) RecordNetworkError() {
 }
 
 // RecordPageMetrics updates simple scraping/analytics statistics for a
-// successfully fetched page. It is safe for concurrent use.
-func (s *CrawlStats) RecordPageMetrics(url, title string, wordCount, internalLinks, externalLinks int) {
+// successfully fetched page and stores a per-page record. It is safe
+// for concurrent use.
+func (s *CrawlStats) RecordPageMetrics(url, title string, wordCount, internalLinks, externalLinks int, keywords []string) {
 	if s == nil {
 		return
 	}
@@ -184,6 +199,39 @@ func (s *CrawlStats) RecordPageMetrics(url, title string, wordCount, internalLin
 	if externalLinks > 0 {
 		s.TotalExternalLinks += externalLinks
 	}
+
+	// Store a per-page record for systematic export. This remains in
+	// memory for the life of a crawl and is not persisted to disk.
+	rec := PageRecord{
+		URL:           url,
+		Title:         title,
+		WordCount:     wordCount,
+		InternalLinks: internalLinks,
+		ExternalLinks: externalLinks,
+		Keywords:      append([]string(nil), keywords...),
+	}
+	// Lazily allocate a slice on first use.
+	// Use topicCounts map size as a rough guard against unbounded growth
+	// in very large crawls; this project is designed for small demos.
+	// We simply append here; callers reading page data should do so
+	// before discarding the CrawlStats instance.
+	//
+	// Note: we intentionally do not cap the slice here to keep the
+	// implementation simple for this educational project.
+	if s.topicCounts == nil {
+		// ensure maps exist if we haven't recorded topics yet
+		s.topicCounts = make(map[string]int)
+	}
+	// Reuse topicExamples map to track that we've at least seen pages,
+	// but page records themselves live only in memory.
+	// We'll attach them via PagesSnapshot for export.
+	// For now we don't need a dedicated slice field; use a hidden key.
+	// To keep the struct straightforward, add a dedicated slice field.
+	// (See PagesSnapshot implementation below.)
+	//
+	// Since Go doesn't support anonymous slice fields well with maps,
+	// we'll maintain an internal slice on CrawlStats.
+	s.pages = append(s.pages, rec)
 }
 
 // RecordTopics aggregates per-page keywords into crawl-level topic stats.
@@ -249,6 +297,23 @@ func (s *CrawlStats) Snapshot() CrawlStatsView {
 	}
 
 	return view
+}
+
+// PagesSnapshot returns a shallow copy of the per-page analytics slice
+// so callers can safely inspect it without holding the lock.
+func (s *CrawlStats) PagesSnapshot() []PageRecord {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.pages) == 0 {
+		return nil
+	}
+	out := make([]PageRecord, len(s.pages))
+	copy(out, s.pages)
+	return out
 }
 
 // SummarizeMode converts raw stats into a simple, human-readable
