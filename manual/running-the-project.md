@@ -54,6 +54,7 @@ Flags:
 
 - `-url` – seed URL or domain (e.g. `https://google.com` or `facebook.com`).
   - If you omit the scheme, the crawler assumes `https://`.
+  - The examples here sometimes use `https://example.com`, which is a standard documentation domain. On some machines with unusual TLS settings, this may fail trust checks; if you see a certificate error, simply try another public site you control.
 - `-workers` – number of concurrent workers (default `8`).
 - `-depth` – maximum crawl depth from the seed (default `2`).
  - `-mode` – high-level use case. You can pass:
@@ -168,5 +169,6 @@ This will:
 - The `DiscoverWorker` stage is a placeholder; it does not yet extract and enqueue links, so the crawler does not recursively explore the full site.
 - Rate limiting is applied per domain via the `DomainLimiter` in the fetch stage.
 - Crawl summaries (stats + human-friendly mode-specific summary) are persisted to `crawler/data/crawls.jsonl` and surfaced via the API and Web UI.
+ - TLS behavior depends on your local system trust store. If `https://example.com` or another HTTPS URL fails with a certificate error, that indicates an environment trust issue, not a problem with the crawler itself.
 
 This manual should be enough to build and run the CLI, Web UI, and JSON API directly or via Docker for testing and demos.
