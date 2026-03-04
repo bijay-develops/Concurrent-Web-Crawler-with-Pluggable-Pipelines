@@ -25,7 +25,7 @@ func main() {
 
 	c := crawler.New(
 		crawler.WithWorkerCount(8),
-		crawler.WithMaxDepth(3),
+		crawler.WithMaxDepth(2),
 	)
 
 	if err := c.Run(ctx); err != nil {
