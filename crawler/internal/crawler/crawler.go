@@ -16,6 +16,7 @@ type Crawler struct {
 	maxDepth int
 	seedURL  string
 	mode     shared.UseCase
+	stats    *shared.CrawlStats
 }
 
 type Option func(*Crawler)
@@ -41,6 +42,12 @@ func WithSeedURL(u string) Option {
 func WithUseCase(mode shared.UseCase) Option {
 	return func(c *Crawler) {
 		c.mode = mode
+	}
+}
+
+func WithStatsCollector(stats *shared.CrawlStats) Option {
+	return func(c *Crawler) {
+		c.stats = stats
 	}
 }
 
@@ -89,7 +96,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 	for i := 0; i < c.workers; i++ {
 		go func() {
 			defer fetchWG.Done()
-			pipeline.FetchWorker(ctx, client, limiter, scheduled, fetched, c.mode)
+			pipeline.FetchWorker(ctx, client, limiter, scheduled, fetched, c.mode, c.stats)
 		}()
 	}
 

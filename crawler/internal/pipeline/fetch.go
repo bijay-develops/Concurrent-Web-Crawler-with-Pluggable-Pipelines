@@ -20,6 +20,7 @@ func FetchWorker(
 	in <-chan shared.Item,
 	out chan<- shared.Item,
 	mode shared.UseCase,
+	stats *shared.CrawlStats,
 ) {
 	for {
 		select {
@@ -39,10 +40,17 @@ func FetchWorker(
 
 			resp, err := client.Do(req)
 			if err != nil {
+				if stats != nil {
+					stats.RecordNetworkError()
+				}
+				log.Printf("[Crawl] request failed for %s: %v", item.URL.String(), err)
 				continue
 			}
 
 			item.Response = resp
+			if stats != nil {
+				stats.RecordSuccess(item.URL.String(), resp.StatusCode)
+			}
 
 			switch mode {
 			case shared.UseCaseTrackBlogs:

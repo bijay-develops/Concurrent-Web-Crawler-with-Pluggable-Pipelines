@@ -88,6 +88,10 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
     {{end}}
     <p><strong>Config</strong></p>
 		<p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}} mode={{.Mode}}</code></p>
+		{{if .Summary}}
+			<p><strong>What this means</strong></p>
+			<p>{{.Summary}}</p>
+		{{end}}
   </div>
   {{end}}
 </body>
@@ -100,6 +104,7 @@ type pageData struct {
 	Mode    string
 	Ran     bool
 	Error   string
+	Summary string
 }
 
 func normalizeMode(s string) string {
@@ -129,6 +134,41 @@ func parseUseCase(mode string) shared.UseCase {
 		return shared.UseCaseSearchIndex
 	default:
 		return shared.UseCaseTrackBlogs
+	}
+}
+
+func buildSummary(useCase shared.UseCase, s shared.CrawlStats) string {
+	if s.TotalRequests == 0 {
+		return "No requests were made. The URL might have been invalid or the crawl was stopped immediately."
+	}
+
+	statusText := ""
+	switch {
+	case s.LastStatusCode >= 200 && s.LastStatusCode < 300:
+		statusText = "The last page responded with a successful status (2xx)."
+	case s.LastStatusCode >= 400 && s.LastStatusCode < 500:
+		statusText = "The last page returned a client error (4xx) — check the URL or permissions."
+	case s.LastStatusCode >= 500 && s.LastStatusCode < 600:
+		statusText = "The last page returned a server error (5xx) — the site might be having issues."
+	default:
+		if s.NetworkErrors > 0 {
+			statusText = "The request failed before getting a response — there may be network or DNS issues."
+		} else {
+			statusText = "The last response had a non-standard status code."
+		}
+	}
+
+	base := "Checked 1 page. " + statusText
+
+	switch useCase {
+	case shared.UseCaseTrackBlogs:
+		return base + " This run is focused on seeing whether your blog is reachable so you can track it over time."
+	case shared.UseCaseSiteHealth:
+		return base + " This run behaves like a simple health check for your site: if you see 2xx, the page is up; 4xx/5xx suggest problems."
+	case shared.UseCaseSearchIndex:
+		return base + " This run treats the page as a candidate for a search index — a successful status means it could be indexed."
+	default:
+		return base
 	}
 }
 
@@ -169,6 +209,8 @@ func main() {
 		modeStr := normalizeMode(modeVal)
 		useCase := parseUseCase(modeStr)
 
+		stats := &shared.CrawlStats{}
+
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 
@@ -177,6 +219,7 @@ func main() {
 			crawler.WithMaxDepth(depth),
 			crawler.WithSeedURL(urlVal),
 			crawler.WithUseCase(useCase),
+			crawler.WithStatsCollector(stats),
 		)
 
 		var runErr string
@@ -187,6 +230,9 @@ func main() {
 			}
 		}
 
+		statsSnapshot := stats.Snapshot()
+		summary := buildSummary(useCase, statsSnapshot)
+
 		data := pageData{
 			URL:     urlVal,
 			Workers: workers,
@@ -194,6 +240,7 @@ func main() {
 			Mode:    modeStr,
 			Ran:     true,
 			Error:   runErr,
+			Summary: summary,
 		}
 		_ = pageTmpl.Execute(w, data)
 	})
