@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"crawler/internal/shared"
 	"io"
@@ -8,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 func ParseWorker(
@@ -47,36 +50,89 @@ func ParseWorker(
 	}
 }
 
-// extractPageMetrics performs very lightweight HTML scraping to provide
-// user-friendly analytics and keyword hints without external dependencies.
+// extractPageMetrics performs HTML scraping using a DOM parser so that
+// text and links are derived from the real structure instead of
+// fragile regular expressions.
 func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount, internalLinks, externalLinks int, keywords []string) {
-	// Work on a lowercase copy for tag/attribute searches.
-	lower := strings.ToLower(string(body))
-
-	// 1. Title extraction: first <title>...</title> block.
-	start := strings.Index(lower, "<title")
-	if start >= 0 {
-		// Skip to closing '>' of the <title> tag.
-		endTagStart := strings.Index(lower[start:], ">")
-		if endTagStart >= 0 {
-			contentStart := start + endTagStart + 1
-			end := strings.Index(lower[contentStart:], "</title>")
-			if end >= 0 {
-				title = strings.TrimSpace(string(body[contentStart : contentStart+end]))
-			}
+	// Parse HTML into a node tree. If parsing fails, fall back to the
+	// previous regex-based approach for robustness.
+	root, err := html.Parse(bytes.NewReader(body))
+	if err != nil || root == nil {
+		lower := strings.ToLower(string(body))
+		noTags := stripHTMLTags(lower)
+		if noTags != "" {
+			words := strings.Fields(noTags)
+			wordCount = len(words)
+			keywords = topKeywords(words, 5)
 		}
+		internalLinks, externalLinks = countLinks(pageURL, lower)
+		return title, wordCount, internalLinks, externalLinks, keywords
 	}
 
-	// 2. Rough word count and per-page keyword candidates.
-	noTags := stripHTMLTags(lower)
-	if noTags != "" {
-		words := strings.Fields(noTags)
+	var textParts []string
+
+	// Walk the DOM once, collecting title, visible text, and link hrefs.
+	var visit func(n *html.Node)
+	visit = func(n *html.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type == html.ElementNode {
+			name := strings.ToLower(n.Data)
+			// Skip non-content sections entirely.
+			switch name {
+			case "script", "style", "noscript", "head":
+				return
+			case "title":
+				if title == "" {
+					if t := collectText(n); t != "" {
+						title = t
+					}
+				}
+			case "a":
+				if pageURL != nil {
+					for _, attr := range n.Attr {
+						if strings.EqualFold(attr.Key, "href") {
+							link := strings.TrimSpace(attr.Val)
+							if link == "" || strings.HasPrefix(link, "#") || strings.HasPrefix(link, "javascript:") {
+								continue
+							}
+							u, err := url.Parse(link)
+							if err != nil {
+								continue
+							}
+							if !u.IsAbs() {
+								u = pageURL.ResolveReference(u)
+							}
+							if equalHosts(u.Host, pageURL.Host) {
+								internalLinks++
+							} else {
+								externalLinks++
+							}
+						}
+					}
+				}
+			}
+		}
+		if n.Type == html.TextNode {
+			text := strings.TrimSpace(n.Data)
+			if text != "" {
+				textParts = append(textParts, text)
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	visit(root)
+
+	joined := strings.ToLower(strings.Join(textParts, " "))
+	joined = strings.Join(strings.Fields(joined), " ")
+	if joined != "" {
+		words := strings.Fields(joined)
 		wordCount = len(words)
 		keywords = topKeywords(words, 5)
 	}
-
-	// 3. Link counts: count internal vs external <a href="..."> links.
-	internalLinks, externalLinks = countLinks(pageURL, lower)
 
 	return title, wordCount, internalLinks, externalLinks, keywords
 }
@@ -84,12 +140,34 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 var tagRegexp = regexp.MustCompile(`<[^>]+>`)
 
 func stripHTMLTags(s string) string {
-	// Remove all angle-bracket tags; this is not a full HTML sanitizer
-	// but works well enough for counting words.
 	clean := tagRegexp.ReplaceAllString(s, " ")
-	// Collapse whitespace.
 	clean = strings.Join(strings.Fields(clean), " ")
 	return clean
+}
+
+// collectText returns all descendant text of a node joined with
+// single spaces, ignoring nested script/style sections.
+func collectText(n *html.Node) string {
+	var parts []string
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if node.Type == html.ElementNode {
+			name := strings.ToLower(node.Data)
+			if name == "script" || name == "style" || name == "noscript" {
+				return
+			}
+		}
+		if node.Type == html.TextNode {
+			if t := strings.TrimSpace(node.Data); t != "" {
+				parts = append(parts, t)
+			}
+		}
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return strings.Join(parts, " ")
 }
 
 // Basic English stopwords to avoid boring topics. This also includes
