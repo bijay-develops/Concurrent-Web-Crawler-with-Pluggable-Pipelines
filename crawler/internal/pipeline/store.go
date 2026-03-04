@@ -4,12 +4,12 @@ import (
 	"context"
 	"log"
 
-	"crawler/internal/crawler"
+	"crawler/internal/shared"
 )
 
 type LogStore struct{}
 
-func (LogStore) Store(ctx context.Context, item crawler.Item) error {
+func (LogStore) Store(ctx context.Context, item shared.Item) error {
 	log.Println("stored:", item.URL.String())
 	return nil
 }

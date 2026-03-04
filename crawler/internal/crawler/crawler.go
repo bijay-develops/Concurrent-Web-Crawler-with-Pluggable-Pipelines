@@ -2,12 +2,12 @@ package crawler
 
 import (
 	"context"
+	"crawler/internal/pipeline"
+	"crawler/internal/shared"
 	"errors"
 	"net/url"
 	"sync"
 	"time"
-
-	"crawler/internal/pipeline"
 )
 
 type Crawler struct {
@@ -45,15 +45,15 @@ func (c *Crawler) Run(ctx context.Context) error {
 		return errors.New("worker count must be > 0")
 	}
 
-	tracker := &WorkTracker{}
+	tracker := &shared.WorkTracker{}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	seeds := make(chan Item)
-	scheduled := make(chan Item)
-	fetched := make(chan Item)
-	parsed := make(chan Item)
-	discovered := make(chan Item)
+	seeds := make(chan shared.Item)
+	scheduled := make(chan shared.Item)
+	fetched := make(chan shared.Item)
+	parsed := make(chan shared.Item)
+	discovered := make(chan shared.Item)
 
 	scheduler := NewScheduler()
 
@@ -89,7 +89,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 		defer close(seeds)
 		u, _ := url.Parse("https://example.com")
 		tracker.Add(1)
-		seeds <- Item{URL: u, Depth: 0}
+		seeds <- shared.Item{URL: u, Depth: 0}
 	}()
 
 	<-ctx.Done()

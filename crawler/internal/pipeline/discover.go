@@ -2,16 +2,16 @@ package pipeline
 
 import (
 	"context"
-	"crawler/internal/crawler"
+	"crawler/internal/shared"
 )
 
 func DiscoverWorker(
 	ctx context.Context,
-	in <-chan crawler.Item,
-	out chan<- crawler.Item,
+	in <-chan shared.Item,
+	out chan<- shared.Item,
 	maxDepth int,
-	tracker *crawler.WorkTracker,
-){
+	tracker *shared.WorkTracker,
+) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -28,7 +28,7 @@ func DiscoverWorker(
 			}
 
 			// placeholder: no real discovery yet
-			_= out
+			_ = out
 		}
 	}
 }

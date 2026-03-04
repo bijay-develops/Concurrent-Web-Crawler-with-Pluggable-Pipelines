@@ -1,7 +1,9 @@
 package crawler
 
 // WorkTracker is a simple utility to track ongoing work items in the crawler.
-import "sync"
+import (
+	"sync"
+)
 
 // WorkTracker is a simple wrapper around sync.WaitGroup to track the number of ongoing work items.
 type WorkTracker struct {

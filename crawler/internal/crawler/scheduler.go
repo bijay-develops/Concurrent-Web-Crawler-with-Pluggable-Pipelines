@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"crawler/internal/shared"
 	"sync"
 )
 
@@ -19,7 +20,7 @@ func NewScheduler() *Scheduler {
 }
 
 // Schedule reads items from the input channel, checks for duplicates, and sends unique items to the output channel.
-func (s *Scheduler) Schedule(ctx context.Context, in <-chan Item, out chan<- Item) {
+func (s *Scheduler) Schedule(ctx context.Context, in <-chan shared.Item, out chan<- shared.Item) {
 	for {
 		// Use a select statement to handle context cancellation and channel input simultaneously.
 		select {

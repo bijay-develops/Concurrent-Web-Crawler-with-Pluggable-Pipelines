@@ -1,9 +1,9 @@
 package pipeline
 
-import "crawler/internal/crawler"
+import "crawler/internal/shared"
 
 type AllowAllFilter struct{}
 
-func (AllowAllFilter) Allow(item crawler.Item) bool {
+func (AllowAllFilter) Allow(item shared.Item) bool {
 	return true
 }

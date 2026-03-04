@@ -2,13 +2,13 @@ package pipeline
 
 import (
 	"context"
-	"crawler/internal/crawler"
+	"crawler/internal/shared"
 )
 
 func ParseWorker(
 	ctx context.Context,
-	in <-chan crawler.Item,
-	out chan<- crawler.Item,
+	in <-chan shared.Item,
+	out chan<- shared.Item,
 ) {
 	for {
 		select {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"crawler/internal/crawler"
+	"crawler/internal/shared"
 )
 
 func NewHTTPClient(timeout time.Duration) *http.Client {
@@ -16,8 +16,8 @@ func FetchWorker(
 	ctx context.Context,
 	client *http.Client,
 	limiter *DomainLimiter,
-	in <-chan crawler.Item,
-	out chan<- crawler.Item,
+	in <-chan shared.Item,
+	out chan<- shared.Item,
 ) {
 	for {
 		select {
