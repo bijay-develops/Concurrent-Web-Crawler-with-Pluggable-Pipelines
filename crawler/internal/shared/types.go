@@ -24,6 +24,10 @@ type Item struct {
 	Depth    int
 	Response *http.Response
 	Mode     UseCase
+
+	// DiscoveredURLs holds absolute URLs discovered while parsing the
+	// page. It is used by the discover stage to schedule additional work.
+	DiscoveredURLs []string
 }
 
 type WorkTracker struct {

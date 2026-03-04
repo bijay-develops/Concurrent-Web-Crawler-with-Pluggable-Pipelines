@@ -132,6 +132,17 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					const stats = data.stats || {};
 					const summary = data.summary || {};
 					const pages = Array.isArray(data.pages) ? data.pages : [];
+					const pagesForTitles = pages
+						.filter(function(p) { return p && (p.wordCount || 0) > 0; })
+						.slice()
+						.sort(function(a, b) {
+							const aw = a && a.wordCount ? Number(a.wordCount) : 0;
+							const bw = b && b.wordCount ? Number(b.wordCount) : 0;
+							if (bw !== aw) return bw - aw;
+							const at = (a && a.title) ? String(a.title) : '';
+							const bt = (b && b.title) ? String(b.title) : '';
+							return at.localeCompare(bt);
+						});
 
 					let html = '<div><strong>Result</strong></div>';
 					if (data.error) {
@@ -243,10 +254,24 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 						html += '<p><strong>Top themes / topics</strong></p><p>No clear topics detected yet.</p>';
 					}
 
+					// Titles list: Title (Keywords) (Total length)
+					if (pagesForTitles.length > 0) {
+						html += '<p><strong>Titles</strong></p>';
+						html += '<ol>';
+						pagesForTitles.forEach(function(p) {
+							const titleText = (p && p.title && String(p.title).trim()) ? String(p.title).trim() : (p && p.url ? String(p.url) : '(untitled)');
+							const kws = (p && Array.isArray(p.keywords) && p.keywords.length) ? p.keywords.join(', ') : '';
+							const words = (p && typeof p.wordCount === 'number') ? p.wordCount : (p && p.wordCount ? Number(p.wordCount) : 0);
+							html += '<li>' + titleText + ' (' + kws + ') (' + (words || 0) + ' words)</li>';
+						});
+						html += '</ol>';
+					}
+
 					// Download buttons for structured analytics
 					html += '<p><strong>Download data</strong></p>';
 					html += '<button type="button" id="download-json">Download analytics (JSON)</button> ';
-					html += '<button type="button" id="download-csv">Download pages (CSV)</button>';
+					html += '<button type="button" id="download-csv">Download pages (CSV)</button> ';
+					html += '<button type="button" id="download-titles">Download titles (TXT)</button>';
 
 					resultBox.innerHTML = html;
 
@@ -294,6 +319,29 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 							const a = document.createElement('a');
 							a.href = URL.createObjectURL(blob);
 							a.download = 'crawl-pages.csv';
+							a.click();
+							URL.revokeObjectURL(a.href);
+						});
+					}
+
+					const dlTitles = document.getElementById('download-titles');
+					if (dlTitles) {
+						dlTitles.addEventListener('click', function () {
+							if (!pagesForTitles.length) {
+								alert('No page-level data available for this crawl.');
+								return;
+							}
+							const lines = ['Titles:'];
+							pagesForTitles.forEach(function(p, idx) {
+								const titleText = (p && p.title && String(p.title).trim()) ? String(p.title).trim() : (p && p.url ? String(p.url) : '(untitled)');
+								const kws = (p && Array.isArray(p.keywords) && p.keywords.length) ? p.keywords.join(', ') : '';
+								const words = (p && typeof p.wordCount === 'number') ? p.wordCount : (p && p.wordCount ? Number(p.wordCount) : 0);
+								lines.push((idx + 1) + '. ' + titleText + ' (' + kws + ') (' + (words || 0) + ' words)');
+							});
+							const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain' });
+							const a = document.createElement('a');
+							a.href = URL.createObjectURL(blob);
+							a.download = 'crawl-titles.txt';
 							a.click();
 							URL.revokeObjectURL(a.href);
 						});

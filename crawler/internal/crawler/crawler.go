@@ -86,7 +86,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 	scheduler := NewScheduler()
 
-	go scheduler.Schedule(ctx, seeds, scheduled)
+	go scheduler.Schedule(ctx, seeds, scheduled, nil)
 
 	client := pipeline.NewHTTPClient(10 * time.Second)
 	limiter := pipeline.NewDomainLimiter(500 * time.Millisecond)
@@ -107,7 +107,7 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 	go pipeline.ParseWorker(ctx, fetched, parsed, c.stats)
 	go pipeline.DiscoverWorker(ctx, parsed, discovered, c.maxDepth, tracker)
-	go scheduler.Schedule(ctx, discovered, scheduled)
+	go scheduler.Schedule(ctx, discovered, scheduled, tracker)
 
 	go func() {
 		tracker.Wait()

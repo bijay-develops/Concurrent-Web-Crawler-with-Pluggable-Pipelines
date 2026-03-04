@@ -20,7 +20,12 @@ func NewScheduler() *Scheduler {
 }
 
 // Schedule reads items from the input channel, checks for duplicates, and sends unique items to the output channel.
-func (s *Scheduler) Schedule(ctx context.Context, in <-chan shared.Item, out chan<- shared.Item) {
+//
+// If tracker is non-nil, it is used to keep accurate accounting of
+// in-flight unique work items. Callers that already incremented the
+// tracker for a candidate item can pass it here so duplicates are
+// compensated via Done().
+func (s *Scheduler) Schedule(ctx context.Context, in <-chan shared.Item, out chan<- shared.Item, tracker *shared.WorkTracker) {
 	for {
 		// Use a select statement to handle context cancellation and channel input simultaneously.
 		select {
@@ -38,6 +43,9 @@ func (s *Scheduler) Schedule(ctx context.Context, in <-chan shared.Item, out cha
 			s.mu.Lock()
 			if _, exists := s.seen[key]; exists {
 				s.mu.Unlock()
+				if tracker != nil {
+					tracker.Done()
+				}
 				continue
 			}
 			s.seen[key] = struct{}{}
@@ -47,6 +55,14 @@ func (s *Scheduler) Schedule(ctx context.Context, in <-chan shared.Item, out cha
 			select {
 			case out <- item:
 			case <-ctx.Done():
+				// Undo the bookkeeping if we were tracking this candidate.
+				if tracker != nil {
+					tracker.Done()
+				}
+				// Best-effort remove from seen so a future run could try again.
+				s.mu.Lock()
+				delete(s.seen, key)
+				s.mu.Unlock()
 				return
 			}
 		}

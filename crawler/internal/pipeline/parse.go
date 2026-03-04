@@ -27,6 +27,7 @@ func ParseWorker(
 			if !ok {
 				return
 			}
+			item.DiscoveredURLs = nil
 			if item.Response != nil {
 				// Only attempt HTML scraping/analytics for text/html-like
 				// responses. This keeps us polite to APIs and binary
@@ -41,7 +42,8 @@ func ParseWorker(
 					item.Response.Body.Close()
 					item.Response = nil
 					if err == nil && len(body) > 0 {
-						title, wordCount, internalLinks, externalLinks, keywords := extractPageMetrics(item.URL, body)
+						title, wordCount, internalLinks, externalLinks, keywords, discovered := extractPageMetrics(item.URL, body)
+						item.DiscoveredURLs = discovered
 						if stats != nil {
 							stats.RecordPageMetrics(item.URL.String(), title, wordCount, internalLinks, externalLinks, keywords)
 							stats.RecordTopics(title, keywords)
@@ -62,7 +64,7 @@ func ParseWorker(
 // extractPageMetrics performs HTML scraping using a DOM parser so that
 // text and links are derived from the real structure instead of
 // fragile regular expressions.
-func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount, internalLinks, externalLinks int, keywords []string) {
+func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount, internalLinks, externalLinks int, keywords []string, discovered []string) {
 	// Parse HTML into a node tree. If parsing fails, fall back to the
 	// previous regex-based approach for robustness.
 	root, err := html.Parse(bytes.NewReader(body))
@@ -75,12 +77,29 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 			keywords = topKeywords(words, 5)
 		}
 		internalLinks, externalLinks = countLinks(pageURL, lower)
-		return title, wordCount, internalLinks, externalLinks, keywords
+		discovered := extractInternalLinksRegex(pageURL, lower, 150)
+		return title, wordCount, internalLinks, externalLinks, keywords, discovered
+	}
+
+	// Extract <title> from the full document. We do this separately
+	// because our content walk intentionally skips <head>.
+	title = findDocumentTitle(root)
+
+	// Prefer extracting visible text from <main> or <article> when present.
+	// This reduces noise from nav/sidebars on listing pages.
+	contentRoot := firstElementByTag(root, "main")
+	if contentRoot == nil {
+		contentRoot = firstElementByTag(root, "article")
+	}
+	if contentRoot == nil {
+		contentRoot = root
 	}
 
 	var textParts []string
+	seenDiscovered := make(map[string]struct{})
+	discovered = nil
 
-	// Walk the DOM once, collecting title, visible text, and link hrefs.
+	// Walk the DOM once, collecting visible text and link hrefs.
 	var visit func(n *html.Node)
 	visit = func(n *html.Node) {
 		if n == nil {
@@ -92,12 +111,6 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 			switch name {
 			case "script", "style", "noscript", "head", "header", "footer", "nav", "aside":
 				return
-			case "title":
-				if title == "" {
-					if t := collectText(n); t != "" {
-						title = t
-					}
-				}
 			case "a":
 				if pageURL != nil {
 					for _, attr := range n.Attr {
@@ -115,6 +128,17 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 							}
 							if equalHosts(u.Host, pageURL.Host) {
 								internalLinks++
+								// Track internal links for discovery.
+								if shouldDiscoverURL(pageURL, u) {
+									key := u.String()
+									if _, ok := seenDiscovered[key]; !ok {
+										seenDiscovered[key] = struct{}{}
+										discovered = append(discovered, key)
+										if len(discovered) >= 150 {
+											return
+										}
+									}
+								}
 							} else {
 								externalLinks++
 							}
@@ -133,7 +157,7 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 			visit(c)
 		}
 	}
-	visit(root)
+	visit(contentRoot)
 
 	joined := strings.ToLower(strings.Join(textParts, " "))
 	joined = strings.Join(strings.Fields(joined), " ")
@@ -143,7 +167,78 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 		keywords = topKeywords(words, 10)
 	}
 
-	return title, wordCount, internalLinks, externalLinks, keywords
+	return title, wordCount, internalLinks, externalLinks, keywords, discovered
+}
+
+// shouldDiscoverURL decides whether an internal link should be scheduled
+// for crawling. It filters obvious non-HTML assets and self-links.
+func shouldDiscoverURL(pageURL, u *url.URL) bool {
+	if pageURL == nil || u == nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	if !equalHosts(u.Host, pageURL.Host) {
+		return false
+	}
+	// Avoid self-link loops.
+	if u.String() == pageURL.String() {
+		return false
+	}
+	path := strings.ToLower(u.Path)
+	if path == "" || path == "/" {
+		return false
+	}
+	// Skip common asset/file extensions.
+	switch {
+	case strings.HasSuffix(path, ".jpg"), strings.HasSuffix(path, ".jpeg"), strings.HasSuffix(path, ".png"), strings.HasSuffix(path, ".gif"), strings.HasSuffix(path, ".svg"),
+		strings.HasSuffix(path, ".css"), strings.HasSuffix(path, ".js"), strings.HasSuffix(path, ".json"), strings.HasSuffix(path, ".xml"),
+		strings.HasSuffix(path, ".pdf"), strings.HasSuffix(path, ".zip"), strings.HasSuffix(path, ".gz"),
+		strings.HasSuffix(path, ".mp3"), strings.HasSuffix(path, ".mp4"), strings.HasSuffix(path, ".webm"),
+		strings.HasSuffix(path, ".woff"), strings.HasSuffix(path, ".woff2"), strings.HasSuffix(path, ".ttf"), strings.HasSuffix(path, ".eot"):
+		return false
+	}
+	return true
+}
+
+func extractInternalLinksRegex(pageURL *url.URL, lowerHTML string, limit int) []string {
+	if pageURL == nil || lowerHTML == "" || limit <= 0 {
+		return nil
+	}
+	hrefRe := regexp.MustCompile(`href\s*=\s*"([^"]+)"`)
+	matches := hrefRe.FindAllStringSubmatch(lowerHTML, -1)
+	seen := make(map[string]struct{})
+	out := make([]string, 0, 32)
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		link := strings.TrimSpace(m[1])
+		if link == "" || strings.HasPrefix(link, "#") || strings.HasPrefix(link, "javascript:") {
+			continue
+		}
+		u, err := url.Parse(link)
+		if err != nil {
+			continue
+		}
+		if !u.IsAbs() {
+			u = pageURL.ResolveReference(u)
+		}
+		if !shouldDiscoverURL(pageURL, u) {
+			continue
+		}
+		key := u.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, key)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 var tagRegexp = regexp.MustCompile(`<[^>]+>`)
@@ -187,6 +282,44 @@ var stopwords = map[string]struct{}{
 	"the": {}, "and": {}, "for": {}, "with": {}, "that": {}, "this": {}, "you": {}, "your": {}, "are": {}, "was": {}, "were": {}, "from": {}, "have": {}, "has": {}, "had": {}, "but": {}, "his": {}, "her": {}, "she": {}, "him": {}, "our": {}, "their": {}, "they": {}, "them": {}, "not": {}, "just": {}, "about": {}, "into": {}, "when": {}, "what": {}, "how": {}, "why": {}, "can": {}, "will": {}, "would": {}, "could": {}, "should": {}, "on": {}, "in": {}, "to": {}, "of": {}, "at": {}, "as": {}, "it": {}, "is": {}, "a": {}, "an": {},
 	// extra noise words we do not want as topics
 	"none": {}, "solid": {}, "important": {},
+	// common UI/navigation words that frequently dominate tag/archive pages
+	"login": {}, "subscribe": {}, "newsletter": {}, "search": {}, "contact": {}, "donation": {}, "donate": {}, "tags": {}, "latest": {}, "home": {}, "public": {}, "members": {}, "member": {},
+}
+
+// firstElementByTag returns the first element node in the tree with the
+// given lowercase tag name.
+func firstElementByTag(root *html.Node, tag string) *html.Node {
+	if root == nil || tag == "" {
+		return nil
+	}
+	var found *html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n == nil || found != nil {
+			return
+		}
+		if n.Type == html.ElementNode && strings.EqualFold(n.Data, tag) {
+			found = n
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+			if found != nil {
+				return
+			}
+		}
+	}
+	walk(root)
+	return found
+}
+
+// findDocumentTitle returns the content of the first <title> element.
+func findDocumentTitle(root *html.Node) string {
+	titleNode := firstElementByTag(root, "title")
+	if titleNode == nil {
+		return ""
+	}
+	return strings.TrimSpace(collectText(titleNode))
 }
 
 func topKeywords(words []string, limit int) []string {
