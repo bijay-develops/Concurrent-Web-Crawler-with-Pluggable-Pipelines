@@ -19,6 +19,10 @@ func ParseWorker(
 	out chan<- shared.Item,
 	stats *shared.CrawlStats,
 ) {
+	// Hard cap on HTML bytes read per page. Prevents memory spikes on huge
+	// pages and keeps the crawler responsive.
+	const maxHTMLBytes = 4 << 20 // 4 MiB
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -38,9 +42,14 @@ func ParseWorker(
 					item.Response = nil
 				} else {
 					// Best-effort basic scraping/analytics for HTML responses.
-					body, err := io.ReadAll(item.Response.Body)
+					// Read a bounded amount of HTML so we don't blow up memory.
+					r := io.LimitReader(item.Response.Body, maxHTMLBytes+1)
+					body, err := io.ReadAll(r)
 					item.Response.Body.Close()
 					item.Response = nil
+					if len(body) > maxHTMLBytes {
+						body = body[:maxHTMLBytes]
+					}
 					if err == nil && len(body) > 0 {
 						title, wordCount, internalLinks, externalLinks, keywords, discovered := extractPageMetrics(item.URL, body)
 						item.DiscoveredURLs = discovered

@@ -74,6 +74,9 @@ func (s *FileStore) ListCrawls(_ context.Context) ([]CrawlRecord, error) {
 
 	var out []CrawlRecord
 	scanner := bufio.NewScanner(f)
+	// Scanner defaults to ~64K tokens; a single JSONL record can exceed that.
+	// Raise the limit so history remains reliable.
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
 		var rec CrawlRecord
 		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
