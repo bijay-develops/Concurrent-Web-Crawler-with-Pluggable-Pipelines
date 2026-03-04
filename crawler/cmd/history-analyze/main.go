@@ -15,6 +15,9 @@ import (
 func main() {
 	filePath := flag.String("file", "data/crawls.jsonl", "path to crawls.jsonl history file")
 	TopN := flag.Int("top", 10, "number of top topics to show")
+	urlFilter := flag.String("url", "", "only include crawls whose URL contains this substring")
+	modeFilter := flag.String("mode", "", "only include crawls for this use case (track-blogs|site-health|search-index)")
+	latestOnly := flag.Bool("latest", false, "only consider the most recent crawl per URL")
 	flag.Parse()
 
 	if _, err := os.Stat(*filePath); err != nil {
@@ -34,6 +37,14 @@ func main() {
 		return
 	}
 
+	// Apply optional filters before aggregating so that users can
+	// focus on a single site, mode, or just the latest run per URL.
+	filtered := applyFilters(recs, *urlFilter, *modeFilter, *latestOnly)
+	if len(filtered) == 0 {
+		fmt.Println("No crawl records matched the provided filters.")
+		return
+	}
+
 	// Aggregate topics across all crawls, applying an extra layer of noise
 	// filtering so old CSS-like keywords do not dominate the report.
 	topicCounts := make(map[string]int)
@@ -42,7 +53,7 @@ func main() {
 	var largestPage *pageSummary
 	var smallestPage *pageSummary
 
-	for _, rec := range recs {
+	for _, rec := range filtered {
 		stats := rec.Stats
 
 		// Track largest and smallest pages by word count using the
@@ -95,7 +106,7 @@ func main() {
 		}
 	}
 
-	fmt.Printf("Analyzed %d crawl record(s) from %s\n\n", len(recs), *filePath)
+	fmt.Printf("Analyzed %d crawl record(s) from %s\n\n", len(filtered), *filePath)
 
 	// Report top themes/topics.
 	if len(topicCounts) == 0 {
@@ -196,4 +207,56 @@ func isNoisyTopic(keyword string) bool {
 	}
 
 	return false
+}
+
+// applyFilters narrows the set of crawl records based on optional
+// URL substring, mode, and "latest per URL" constraints.
+func applyFilters(recs []store.CrawlRecord, urlSubstr, mode string, latestOnly bool) []store.CrawlRecord {
+	if len(recs) == 0 {
+		return nil
+	}
+
+	working := recs
+
+	// If requested, only keep the latest crawl per URL. This is useful
+	// when the history file has many repeated runs of the same site.
+	if latestOnly {
+		byURL := make(map[string]store.CrawlRecord)
+		for _, rec := range working {
+			current, ok := byURL[rec.URL]
+			if !ok || rec.FinishedAt.After(current.FinishedAt) {
+				byURL[rec.URL] = rec
+			}
+		}
+		working = make([]store.CrawlRecord, 0, len(byURL))
+		for _, rec := range byURL {
+			working = append(working, rec)
+		}
+	}
+
+	// URL substring filter (case-insensitive).
+	if urlSubstr != "" {
+		needle := strings.ToLower(urlSubstr)
+		var filtered []store.CrawlRecord
+		for _, rec := range working {
+			if strings.Contains(strings.ToLower(rec.URL), needle) {
+				filtered = append(filtered, rec)
+			}
+		}
+		working = filtered
+	}
+
+	// Mode filter matches the stored UseCase string value.
+	if mode != "" {
+		want := strings.ToLower(strings.TrimSpace(mode))
+		var filtered []store.CrawlRecord
+		for _, rec := range working {
+			if strings.ToLower(string(rec.Mode)) == want {
+				filtered = append(filtered, rec)
+			}
+		}
+		working = filtered
+	}
+
+	return working
 }

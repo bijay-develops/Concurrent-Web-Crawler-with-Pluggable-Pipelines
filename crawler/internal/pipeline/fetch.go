@@ -52,6 +52,14 @@ func FetchWorker(
 				continue
 			}
 
+			// If the server is telling us to slow down, respect that by
+			// briefly backing off in this worker. The domain-level limiter
+			// already spaces requests, so this is an extra safety net.
+			if resp.StatusCode == http.StatusTooManyRequests {
+				log.Printf("[Crawl] received 429 Too Many Requests from %s; backing off briefly", item.URL.Host)
+				time.Sleep(2 * time.Second)
+			}
+
 			item.Response = resp
 			if stats != nil {
 				stats.RecordSuccess(item.URL.String(), resp.StatusCode)

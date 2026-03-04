@@ -28,15 +28,24 @@ func ParseWorker(
 				return
 			}
 			if item.Response != nil {
-				// Best-effort basic scraping/analytics for HTML responses.
-				body, err := io.ReadAll(item.Response.Body)
-				item.Response.Body.Close()
-				item.Response = nil
-				if err == nil && len(body) > 0 {
-					title, wordCount, internalLinks, externalLinks, keywords := extractPageMetrics(item.URL, body)
-					if stats != nil {
-						stats.RecordPageMetrics(item.URL.String(), title, wordCount, internalLinks, externalLinks, keywords)
-						stats.RecordTopics(title, keywords)
+				// Only attempt HTML scraping/analytics for text/html-like
+				// responses. This keeps us polite to APIs and binary
+				// endpoints and avoids wasting work.
+				ct := item.Response.Header.Get("Content-Type")
+				if ct != "" && !strings.Contains(ct, "text/html") && !strings.Contains(ct, "application/xhtml+xml") {
+					item.Response.Body.Close()
+					item.Response = nil
+				} else {
+					// Best-effort basic scraping/analytics for HTML responses.
+					body, err := io.ReadAll(item.Response.Body)
+					item.Response.Body.Close()
+					item.Response = nil
+					if err == nil && len(body) > 0 {
+						title, wordCount, internalLinks, externalLinks, keywords := extractPageMetrics(item.URL, body)
+						if stats != nil {
+							stats.RecordPageMetrics(item.URL.String(), title, wordCount, internalLinks, externalLinks, keywords)
+							stats.RecordTopics(title, keywords)
+						}
 					}
 				}
 			}
