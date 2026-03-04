@@ -21,10 +21,11 @@ type StartRequest struct {
 
 // StartResponse is a simple summary of a finished crawl.
 type StartResponse struct {
-	URL   string
-	Mode  shared.UseCase
-	Stats shared.CrawlStatsView
-	Err   string
+	URL     string
+	Mode    shared.UseCase
+	Stats   shared.CrawlStatsView
+	Summary shared.ModeSummary
+	Err     string
 }
 
 // CrawlService coordinates running short-lived crawls for API callers.
@@ -84,21 +85,24 @@ func (s *CrawlService) StartCrawl(ctx context.Context, req StartRequest) (StartR
 		}
 	}
 
+	view := stats.Snapshot()
+
 	rec := store.CrawlRecord{
 		ID:         time.Now().UTC().Format("20060102T150405.000000000Z07:00"),
 		StartedAt:  time.Now().UTC(),
 		FinishedAt: time.Now().UTC(),
 		URL:        req.URL,
 		Mode:       mode,
-		Stats:      stats.Snapshot(),
+		Stats:      view,
 		Error:      errStr,
 	}
 	_ = s.store.SaveCrawl(ctx, rec)
 
 	return StartResponse{
-		URL:   req.URL,
-		Mode:  mode,
-		Stats: stats.Snapshot(),
-		Err:   errStr,
+		URL:     req.URL,
+		Mode:    mode,
+		Stats:   view,
+		Summary: shared.SummarizeMode(mode, view),
+		Err:     errStr,
 	}, nil
 }

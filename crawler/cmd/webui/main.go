@@ -79,22 +79,25 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
     <button type="submit">Start crawl</button>
   </form>
 
-  {{if .Ran}}
-  <div class="result">
-    <div><strong>Result</strong></div>
-    {{if .Error}}
-      <p class="error">Error: {{.Error}}</p>
-    {{else}}
-      <p class="ok">Crawl finished successfully.</p>
-    {{end}}
-    <p><strong>Config</strong></p>
-		<p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}} mode={{.Mode}}</code></p>
-		{{if .Summary}}
-			<p><strong>What this means</strong></p>
-			<p>{{.Summary}}</p>
+	<div class="result">
+		{{if .Ran}}
+			<div><strong>Result</strong></div>
+			{{if .Error}}
+				<p class="error">Error: {{.Error}}</p>
+			{{else}}
+				<p class="ok">Crawl finished successfully.</p>
+			{{end}}
+			<p><strong>Config</strong></p>
+			<p><code>url={{.URL}} workers={{.Workers}} depth={{.Depth}} mode={{.Mode}}</code></p>
+			{{if .Summary}}
+				<p><strong>What this means</strong></p>
+				<p>{{.Summary}}</p>
+			{{end}}
+		{{else}}
+			<div><strong>Result</strong></div>
+			<p>Fill the form and start a crawl to see a summary here.</p>
 		{{end}}
-  </div>
-  {{end}}
+	</div>
 	<script>
 		(function() {
 			const form = document.querySelector('form');
@@ -109,10 +112,13 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 				const depth = parseInt(formData.get('depth') || '2', 10);
 				const mode = formData.get('mode') || 'blogs';
 
-				const resultBox = document.querySelector('.result');
-				if (resultBox) {
-					resultBox.innerHTML = '<div><strong>Result</strong></div><p>Running crawl...</p>';
+				let resultBox = document.querySelector('.result');
+				if (!resultBox) {
+					resultBox = document.createElement('div');
+					resultBox.className = 'result';
+					form.insertAdjacentElement('afterend', resultBox);
 				}
+				resultBox.innerHTML = '<div><strong>Result</strong></div><p>Running crawl...</p>';
 
 				try {
 					const res = await fetch('/api/crawls', {
@@ -122,8 +128,6 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					});
 					const data = await res.json();
 
-					if (!resultBox) return;
-
 					let html = '<div><strong>Result</strong></div>';
 					if (data.error) {
 						html += '<p class="error">Error: ' + data.error + '</p>';
@@ -131,25 +135,11 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 						html += '<p class="ok">Crawl finished successfully.</p>';
 					}
 					html += '<p><strong>Config</strong></p>';
-					html += '<p><code>url=' + (data.url || url) + ' workers=' + workers + ' depth=' + depth + ' mode=' + mode + '</code></p>';
+					html += '<p><code>url=' + (data.url || url) + ' workers=' + workers + ' depth=' + depth + ' mode=' + (data.mode || mode) + '</code></p>';
 
-					// Basic interpretation based on stats
-					if (data.stats && data.stats.totalRequests !== 0) {
-						const s = data.stats;
-						let statusText = '';
-						if (s.lastStatusCode >= 200 && s.lastStatusCode < 300) {
-							statusText = 'The last page responded with a successful status (2xx).';
-						} else if (s.lastStatusCode >= 400 && s.lastStatusCode < 500) {
-							statusText = 'The last page returned a client error (4xx) — check the URL or permissions.';
-						} else if (s.lastStatusCode >= 500 && s.lastStatusCode < 600) {
-							statusText = 'The last page returned a server error (5xx) — the site might be having issues.';
-						} else if (s.networkErrors > 0) {
-							statusText = 'The request failed before getting a response — there may be network or DNS issues.';
-						} else {
-							statusText = 'The last response had a non-standard status code.';
-						}
+					if (data.summary && data.summary.message) {
 						html += '<p><strong>What this means</strong></p>';
-						html += '<p>Checked ' + s.totalRequests + ' page(s). ' + statusText + '</p>';
+						html += '<p>' + data.summary.message + '</p>';
 					}
 
 					resultBox.innerHTML = html;
@@ -205,38 +195,7 @@ func parseUseCase(mode string) shared.UseCase {
 }
 
 func buildSummary(useCase shared.UseCase, s shared.CrawlStatsView) string {
-	if s.TotalRequests == 0 {
-		return "No requests were made. The URL might have been invalid or the crawl was stopped immediately."
-	}
-
-	statusText := ""
-	switch {
-	case s.LastStatusCode >= 200 && s.LastStatusCode < 300:
-		statusText = "The last page responded with a successful status (2xx)."
-	case s.LastStatusCode >= 400 && s.LastStatusCode < 500:
-		statusText = "The last page returned a client error (4xx) — check the URL or permissions."
-	case s.LastStatusCode >= 500 && s.LastStatusCode < 600:
-		statusText = "The last page returned a server error (5xx) — the site might be having issues."
-	default:
-		if s.NetworkErrors > 0 {
-			statusText = "The request failed before getting a response — there may be network or DNS issues."
-		} else {
-			statusText = "The last response had a non-standard status code."
-		}
-	}
-
-	base := "Checked 1 page. " + statusText
-
-	switch useCase {
-	case shared.UseCaseTrackBlogs:
-		return base + " This run is focused on seeing whether your blog is reachable so you can track it over time."
-	case shared.UseCaseSiteHealth:
-		return base + " This run behaves like a simple health check for your site: if you see 2xx, the page is up; 4xx/5xx suggest problems."
-	case shared.UseCaseSearchIndex:
-		return base + " This run treats the page as a candidate for a search index — a successful status means it could be indexed."
-	default:
-		return base
-	}
+	return shared.SummarizeMode(useCase, s).Message
 }
 
 func main() {

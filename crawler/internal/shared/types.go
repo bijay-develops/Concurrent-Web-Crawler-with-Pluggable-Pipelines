@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
@@ -70,6 +71,20 @@ type CrawlStatsView struct {
 	LastURL        string
 }
 
+// ModeSummary is a small, user-friendly interpretation of stats for a
+// particular high-level use case. It is designed to be sent over APIs
+// and rendered directly in UIs.
+type ModeSummary struct {
+	Mode          UseCase        `json:"mode"`
+	CheckedPages  int            `json:"checkedPages"`
+	IsReachable   bool           `json:"isReachable"`
+	IsHealthy     bool           `json:"isHealthy"`
+	IsIndexable   bool           `json:"isIndexable"`
+	PrimaryStatus int            `json:"primaryStatus"`
+	Message       string         `json:"message"`
+	RawStats      CrawlStatsView `json:"rawStats"`
+}
+
 // RecordSuccess updates stats for a successful HTTP response.
 func (s *CrawlStats) RecordSuccess(url string, status int) {
 	if s == nil {
@@ -123,5 +138,95 @@ func (s *CrawlStats) Snapshot() CrawlStatsView {
 		NetworkErrors:  s.NetworkErrors,
 		LastStatusCode: s.LastStatusCode,
 		LastURL:        s.LastURL,
+	}
+}
+
+// SummarizeMode converts raw stats into a simple, human-readable
+// interpretation for the given use case.
+func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
+	checked := v.TotalRequests
+	hasSuccess := v.Success2xx > 0
+	has4xx := v.ClientError4xx > 0
+	has5xx := v.ServerError5xx > 0
+	hasNetwork := v.NetworkErrors > 0
+
+	var msg string
+	isReachable := false
+	isHealthy := false
+	isIndexable := false
+
+	switch mode {
+	case UseCaseTrackBlogs:
+		isReachable = hasSuccess && !has5xx && !hasNetwork
+		switch {
+		case checked == 0:
+			msg = "We did not get any responses yet. Try again with a reachable blog URL."
+		case hasNetwork:
+			msg = "We could not reach this blog due to network or TLS errors."
+		case has5xx:
+			msg = "The blog server is returning 5xx errors, so it may be temporarily down."
+		case has4xx && !hasSuccess:
+			msg = "We only saw 4xx client errors (like 404). Check that the blog URL is correct."
+		case hasSuccess && has4xx:
+			msg = fmt.Sprintf("We reached %d page(s) successfully, but some returned 4xx errors.", v.Success2xx)
+		default:
+			msg = fmt.Sprintf("Your blog looks reachable. We saw %d successful page(s).", v.Success2xx)
+		}
+
+	case UseCaseSiteHealth:
+		isHealthy = !has5xx && !hasNetwork
+		switch {
+		case checked == 0:
+			msg = "No pages were checked yet, so we cannot rate site health."
+		case hasNetwork:
+			msg = "Network or TLS errors prevented a complete health check."
+		case has5xx:
+			msg = "We saw 5xx server errors. The site has availability issues."
+		case has4xx && !hasSuccess:
+			msg = "Only 4xx client errors were seen. Many links may be broken or protected."
+		case has4xx:
+			msg = "Most pages responded, but some returned 4xx errors (broken or restricted URLs)."
+		default:
+			msg = "All checked pages responded without major server errors. The site looks healthy."
+		}
+
+	case UseCaseSearchIndex:
+		isIndexable = hasSuccess && !hasNetwork
+		switch {
+		case checked == 0:
+			msg = "We did not fetch any pages yet, so there is nothing to index."
+		case hasNetwork:
+			msg = "Network or TLS errors blocked us from gathering content to index."
+		case hasSuccess:
+			msg = fmt.Sprintf("We fetched %d page(s) successfully. They are good candidates for indexing.", v.Success2xx)
+		default:
+			msg = "We reached the site but did not see clear 2xx responses to index."
+		}
+
+	default:
+		// Fallback for unknown/empty modes.
+		switch {
+		case checked == 0:
+			msg = "No HTTP responses were recorded yet."
+		case hasNetwork:
+			msg = "Network or TLS errors occurred while crawling."
+		case has5xx:
+			msg = "Server responded with 5xx errors for some requests."
+		case has4xx:
+			msg = "Client-side 4xx errors were seen (for example, 404 or 403)."
+		default:
+			msg = "We saw successful responses without major errors."
+		}
+	}
+
+	return ModeSummary{
+		Mode:          mode,
+		CheckedPages:  checked,
+		IsReachable:   isReachable,
+		IsHealthy:     isHealthy,
+		IsIndexable:   isIndexable,
+		PrimaryStatus: v.LastStatusCode,
+		Message:       msg,
+		RawStats:      v,
 	}
 }

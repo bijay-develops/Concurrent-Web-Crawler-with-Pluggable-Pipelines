@@ -37,10 +37,11 @@ type startCrawlRequest struct {
 }
 
 type startCrawlResponse struct {
-	URL   string                `json:"url"`
-	Mode  string                `json:"mode"`
-	Stats shared.CrawlStatsView `json:"stats"`
-	Error string                `json:"error,omitempty"`
+	URL     string                `json:"url"`
+	Mode    string                `json:"mode"`
+	Stats   shared.CrawlStatsView `json:"stats"`
+	Summary shared.ModeSummary    `json:"summary"`
+	Error   string                `json:"error,omitempty"`
 }
 
 type crawlHistoryResponse struct {
@@ -84,10 +85,11 @@ func (h *Handler) handleStartCrawl(w http.ResponseWriter, r *http.Request) {
 	})
 
 	out := startCrawlResponse{
-		URL:   resp.URL,
-		Mode:  string(resp.Mode),
-		Stats: resp.Stats,
-		Error: resp.Err,
+		URL:     resp.URL,
+		Mode:    string(resp.Mode),
+		Stats:   resp.Stats,
+		Summary: resp.Summary,
+		Error:   resp.Err,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -125,6 +127,7 @@ func (h *Handler) handleListCrawls(w http.ResponseWriter, r *http.Request) {
 			"url":        rec.URL,
 			"mode":       rec.Mode,
 			"stats":      rec.Stats,
+			"summary":    shared.SummarizeMode(rec.Mode, rec.Stats),
 			"error":      rec.Error,
 		})
 	}
