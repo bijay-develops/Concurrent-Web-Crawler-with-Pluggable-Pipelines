@@ -39,6 +39,10 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 		.mode-title { display: block; font-size: 0.9rem; color: #9ca3af; margin-bottom: 0.4rem; }
 		.mode-option { display: block; margin-top: 0.25rem; font-size: 0.85rem; }
 		.mode-option input { margin-right: 0.35rem; }
+		table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
+		th, td { text-align: left; padding: 0.35rem 0.4rem; border-bottom: 1px solid #1e293b; vertical-align: top; }
+		th { color: #9ca3af; font-weight: 600; font-size: 0.85rem; }
+		.small { color: #9ca3af; font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -98,6 +102,12 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 			<div><strong>Result</strong></div>
 			<p>Fill the form and start a crawl to see a summary here.</p>
 		{{end}}
+	</div>
+	<div class="result" id="history-box">
+		<div><strong>History</strong></div>
+		<p class="small">Load past crawl runs from data/crawls.jsonl.</p>
+		<button type="button" id="load-history">Load history</button>
+		<div id="history-content" class="small" style="margin-top: 0.75rem;">Not loaded yet.</div>
 	</div>
 	<script>
 		(function() {
@@ -271,7 +281,8 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					html += '<p><strong>Download data</strong></p>';
 					html += '<button type="button" id="download-json">Download analytics (JSON)</button> ';
 					html += '<button type="button" id="download-csv">Download pages (CSV)</button> ';
-					html += '<button type="button" id="download-titles">Download titles (TXT)</button>';
+					html += '<button type="button" id="download-titles">Download titles (TXT)</button> ';
+					html += '<button type="button" id="download-titles-csv">Download titles (CSV)</button>';
 
 					resultBox.innerHTML = html;
 
@@ -346,12 +357,92 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 							URL.revokeObjectURL(a.href);
 						});
 					}
+
+					const dlTitlesCsv = document.getElementById('download-titles-csv');
+					if (dlTitlesCsv) {
+						dlTitlesCsv.addEventListener('click', function () {
+							if (!pagesForTitles.length) {
+								alert('No page-level data available for this crawl.');
+								return;
+							}
+							const header = ['index','title','wordCount','keywords','url'];
+							const rows = [header.join(',')];
+							pagesForTitles.forEach(function(p, idx) {
+								const titleText = (p && p.title && String(p.title).trim()) ? String(p.title).trim() : '';
+								const kws = (p && Array.isArray(p.keywords) && p.keywords.length) ? p.keywords.join(';') : '';
+								const words = (p && typeof p.wordCount === 'number') ? p.wordCount : (p && p.wordCount ? Number(p.wordCount) : 0);
+								const row = [
+									String(idx + 1).replace(/"/g, '""'),
+									titleText.replace(/"/g, '""'),
+									words || 0,
+									kws.replace(/"/g, '""'),
+									(p && p.url ? String(p.url).replace(/"/g, '""') : '')
+								];
+								rows.push('"' + row.join('","') + '"');
+							});
+							const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+							const a = document.createElement('a');
+							a.href = URL.createObjectURL(blob);
+							a.download = 'crawl-titles.csv';
+							a.click();
+							URL.revokeObjectURL(a.href);
+						});
+					}
 				} catch (err) {
 					if (resultBox) {
 						resultBox.innerHTML = '<div><strong>Result</strong></div><p class="error">Failed to call API: ' + err + '</p>';
 					}
 				}
 			});
+
+			const loadHistoryBtn = document.getElementById('load-history');
+			const historyContent = document.getElementById('history-content');
+			if (loadHistoryBtn && historyContent) {
+				loadHistoryBtn.addEventListener('click', async function () {
+					historyContent.textContent = 'Loading history...';
+					try {
+						const res = await fetch('/api/crawls/history');
+						const data = await res.json();
+						const crawls = (data && Array.isArray(data.crawls)) ? data.crawls : [];
+						if (!crawls.length) {
+							historyContent.textContent = 'No history found.';
+							return;
+						}
+						crawls.sort(function(a, b) {
+							const ad = a && a.finishedAt ? Date.parse(a.finishedAt) : 0;
+							const bd = b && b.finishedAt ? Date.parse(b.finishedAt) : 0;
+							return bd - ad;
+						});
+
+						let html = '<table><thead><tr>' +
+							'<th>Finished</th><th>URL</th><th>Mode</th><th>Parsed</th><th>Words</th><th>Largest</th><th>Error</th>' +
+							'</tr></thead><tbody>';
+						crawls.slice(0, 20).forEach(function(c) {
+							const stats = c.stats || {};
+							const fin = c.finishedAt ? String(c.finishedAt) : '';
+							const url = c.url ? String(c.url) : '';
+							const mode = c.mode ? String(c.mode) : '';
+							const parsed = (typeof stats.parsedPages === 'number') ? stats.parsedPages : (stats.parsedPages || 0);
+							const words = (typeof stats.totalWords === 'number') ? stats.totalWords : (stats.totalWords || 0);
+							const largest = stats.longestPageWordCount ? (stats.longestPageWordCount + ' words') : '';
+							const err = c.error ? String(c.error) : '';
+							html += '<tr>' +
+								'<td class="small">' + fin + '</td>' +
+								'<td class="small">' + url + '</td>' +
+								'<td class="small">' + mode + '</td>' +
+								'<td class="small">' + parsed + '</td>' +
+								'<td class="small">' + words + '</td>' +
+								'<td class="small">' + largest + '</td>' +
+								'<td class="small">' + err + '</td>' +
+							'</tr>';
+						});
+						html += '</tbody></table>';
+						historyContent.innerHTML = html;
+					} catch (e) {
+						historyContent.textContent = 'Failed to load history: ' + e;
+					}
+				});
+			}
 		})();
 	</script>
 </body>

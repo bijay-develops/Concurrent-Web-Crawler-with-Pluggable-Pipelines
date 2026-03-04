@@ -14,6 +14,7 @@ import (
 type Crawler struct {
 	workers  int
 	maxDepth int
+	maxPages int
 	seedURL  string
 	mode     shared.UseCase
 	stats    *shared.CrawlStats
@@ -39,6 +40,12 @@ func WithSeedURL(u string) Option {
 	}
 }
 
+func WithMaxPages(n int) Option {
+	return func(c *Crawler) {
+		c.maxPages = n
+	}
+}
+
 func WithUseCase(mode shared.UseCase) Option {
 	return func(c *Crawler) {
 		c.mode = mode
@@ -55,6 +62,7 @@ func New(opts ...Option) *Crawler {
 	c := &Crawler{
 		workers:  4,
 		maxDepth: 1,
+		maxPages: 40,
 		seedURL:  "https://example.com",
 		mode:     shared.UseCaseTrackBlogs,
 	}
@@ -84,9 +92,9 @@ func (c *Crawler) Run(ctx context.Context) error {
 	parsed := make(chan shared.Item)
 	discovered := make(chan shared.Item)
 
-	scheduler := NewScheduler()
+	scheduler := NewScheduler(c.maxPages)
 
-	go scheduler.Schedule(ctx, seeds, scheduled, nil)
+	go scheduler.Schedule(ctx, seeds, scheduled, tracker)
 
 	client := pipeline.NewHTTPClient(10 * time.Second)
 	limiter := pipeline.NewDomainLimiter(500 * time.Millisecond)

@@ -176,11 +176,21 @@ func shouldDiscoverURL(pageURL, u *url.URL) bool {
 	if pageURL == nil || u == nil {
 		return false
 	}
+	// Normalize obvious noise.
+	u.Fragment = ""
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
 	if !equalHosts(u.Host, pageURL.Host) {
 		return false
+	}
+	// Skip most query-driven links; allow only tracking-only queries.
+	if u.RawQuery != "" {
+		if isOnlyTrackingQuery(u.RawQuery) {
+			u.RawQuery = ""
+		} else {
+			return false
+		}
 	}
 	// Avoid self-link loops.
 	if u.String() == pageURL.String() {
@@ -188,6 +198,26 @@ func shouldDiscoverURL(pageURL, u *url.URL) bool {
 	}
 	path := strings.ToLower(u.Path)
 	if path == "" || path == "/" {
+		return false
+	}
+	path = strings.TrimSuffix(path, "/")
+	if path == "" || path == "/" {
+		return false
+	}
+
+	// Allow pagination within the same tag/archive listing page.
+	if isAllowedPagination(pageURL.Path, u.Path) {
+		return true
+	}
+
+	// Avoid non-content internal areas.
+	if strings.Contains(path, "/wp-json/") || strings.Contains(path, "/wp-admin/") {
+		return false
+	}
+	if strings.Contains(path, "/tag/") || strings.Contains(path, "/category/") || strings.Contains(path, "/author/") {
+		return false
+	}
+	if strings.Contains(path, "/feed") || strings.Contains(path, "/login") || strings.Contains(path, "/subscribe") {
 		return false
 	}
 	// Skip common asset/file extensions.
@@ -198,6 +228,89 @@ func shouldDiscoverURL(pageURL, u *url.URL) bool {
 		strings.HasSuffix(path, ".mp3"), strings.HasSuffix(path, ".mp4"), strings.HasSuffix(path, ".webm"),
 		strings.HasSuffix(path, ".woff"), strings.HasSuffix(path, ".woff2"), strings.HasSuffix(path, ".ttf"), strings.HasSuffix(path, ".eot"):
 		return false
+	}
+
+	// Prefer crawling post-like URLs for better organization.
+	return isLikelyPostPath(path)
+}
+
+func isAllowedPagination(fromPath, toPath string) bool {
+	from := strings.TrimSuffix(strings.ToLower(fromPath), "/")
+	to := strings.TrimSuffix(strings.ToLower(toPath), "/")
+	if from == "" || to == "" {
+		return false
+	}
+	// If we're on a tag page like /tag/calvinism, allow /tag/calvinism/page/2.
+	if strings.Contains(from, "/tag/") {
+		base := from
+		if i := strings.Index(base, "/page/"); i >= 0 {
+			base = base[:i]
+		}
+		return strings.HasPrefix(to, base+"/page/")
+	}
+	// Generic /page/N pagination from an archive page.
+	if strings.Contains(from, "/page/") {
+		base := from[:strings.Index(from, "/page/")]
+		return strings.HasPrefix(to, base+"/page/")
+	}
+	return false
+}
+
+func isOnlyTrackingQuery(raw string) bool {
+	q, err := url.ParseQuery(raw)
+	if err != nil {
+		return false
+	}
+	for k := range q {
+		lk := strings.ToLower(k)
+		if strings.HasPrefix(lk, "utm_") || lk == "fbclid" || lk == "gclid" {
+			continue
+		}
+		return false
+	}
+	return len(q) > 0
+}
+
+func isLikelyPostPath(path string) bool {
+	seg := strings.Split(strings.Trim(path, "/"), "/")
+	if len(seg) == 0 {
+		return false
+	}
+
+	// Date-based permalinks: /2026/03/slug
+	for i := 0; i+1 < len(seg); i++ {
+		if len(seg[i]) == 4 && isAllDigits(seg[i]) {
+			return true
+		}
+	}
+
+	// Common post permalinks on many blogs are 1 segment: /some-long-slug
+	last := seg[len(seg)-1]
+	if len(last) < 8 {
+		return false
+	}
+	hasLetter := false
+	for _, ch := range last {
+		if ch >= 'a' && ch <= 'z' {
+			hasLetter = true
+			continue
+		}
+		if ch == '-' {
+			continue
+		}
+		return false
+	}
+	return hasLetter
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return false
+		}
 	}
 	return true
 }

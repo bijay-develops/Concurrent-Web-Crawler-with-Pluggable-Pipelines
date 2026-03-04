@@ -4,6 +4,7 @@ import (
 	"context"
 	"crawler/internal/shared"
 	"net/url"
+	"strings"
 )
 
 func DiscoverWorker(
@@ -24,7 +25,10 @@ func DiscoverWorker(
 
 			// Schedule discovered internal links for further crawling.
 			if item.Depth < maxDepth {
-				for _, raw := range item.DiscoveredURLs {
+				// Enqueue likely post links first for better results on
+				// listing/tag pages.
+				ordered := orderDiscoveredURLs(item.DiscoveredURLs)
+				for _, raw := range ordered {
 					if raw == "" {
 						continue
 					}
@@ -60,4 +64,22 @@ func DiscoverWorker(
 			}
 		}
 	}
+}
+
+func orderDiscoveredURLs(urls []string) []string {
+	if len(urls) == 0 {
+		return nil
+	}
+	posts := make([]string, 0, len(urls))
+	other := make([]string, 0, len(urls))
+	for _, raw := range urls {
+		p := strings.ToLower(raw)
+		// Prefer typical post permalinks over listing/tag/category pages.
+		if strings.Contains(p, "/tag/") || strings.Contains(p, "/category/") || strings.Contains(p, "/author/") {
+			other = append(other, raw)
+			continue
+		}
+		posts = append(posts, raw)
+	}
+	return append(posts, other...)
 }

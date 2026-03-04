@@ -10,12 +10,19 @@ import (
 type Scheduler struct {
 	mu   sync.Mutex
 	seen map[string]struct{}
+
+	// maxUnique limits the number of unique URLs that will be scheduled
+	// in a single crawl. 0 means unlimited.
+	maxUnique   int
+	uniqueCount int
 }
 
 // NewScheduler creates a new Scheduler instance with an initialized seen map.
-func NewScheduler() *Scheduler {
+
+func NewScheduler(maxUnique int) *Scheduler {
 	return &Scheduler{
-		seen: make(map[string]struct{}),
+		seen:      make(map[string]struct{}),
+		maxUnique: maxUnique,
 	}
 }
 
@@ -48,7 +55,15 @@ func (s *Scheduler) Schedule(ctx context.Context, in <-chan shared.Item, out cha
 				}
 				continue
 			}
+			if s.maxUnique > 0 && s.uniqueCount >= s.maxUnique {
+				s.mu.Unlock()
+				if tracker != nil {
+					tracker.Done()
+				}
+				continue
+			}
 			s.seen[key] = struct{}{}
+			s.uniqueCount++
 			s.mu.Unlock()
 
 			// Send the unique item to the output channel, respecting the context cancellation.
