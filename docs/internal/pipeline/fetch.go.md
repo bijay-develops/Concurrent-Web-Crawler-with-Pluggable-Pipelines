@@ -11,13 +11,14 @@
 ## 3. Key Components
 - `func NewHTTPClient(timeout time.Duration) *http.Client`
   - Constructs an `*http.Client` with the provided timeout.
-- `func FetchWorker(ctx context.Context, client *http.Client, limiter *DomainLimiter, in <-chan crawler.Item, out chan<- crawler.Item)`
+-- `func FetchWorker(ctx context.Context, client *http.Client, limiter *DomainLimiter, in <-chan shared.Item, out chan<- shared.Item, mode shared.UseCase)`
   - Worker loop that:
     - Reads `crawler.Item` values from `in`.
     - Uses `limiter.Wait(item.URL.Host)` to enforce per-domain rate limiting.
     - Builds an HTTP GET request with `http.NewRequestWithContext`.
     - Executes the request with `client.Do(req)`.
     - On success, assigns the `*http.Response` to `item.Response`.
+    - Logs a mode-specific message (e.g., `[Blogs]`, `[Health]`, `[SearchIndex]`) using the `mode` parameter so different use cases are visible in logs.
     - Attempts to send the enriched item to `out`, closing the response body and returning early if the context is canceled.
 
 ## 4. Execution Flow
@@ -31,8 +32,8 @@
 5. If `ctx` is canceled while sending, the worker closes `resp.Body` and returns.
 
 ## 5. Data Flow
-- **Inputs**
-  - `crawler.Item` values with populated `URL` and `Depth` from the scheduled channel.
+-- **Inputs**
+  - `shared.Item` values with populated `URL`, `Depth`, and `Mode` from the scheduled channel.
   - `ctx` for cancellation.
 - **Processing steps**
   - Enforce domain-level rate limiting via `DomainLimiter`.

@@ -7,11 +7,13 @@
 
 ## End-to-End Flow (Conceptual)
 - **Inputs**
-  - Seed URLs provided by the crawler itself (currently a hard-coded `https://example.com`) or, in the future, by higher-level configuration.
-- **Processing**
+  - Seed URLs provided via CLI flags or the Web UI form (by default `https://example.com`).
+  - A selected **mode** / use case (Track Blogs, Site Health, Search Index) provided by the user.
+  - **Processing**
   - The core crawler creates channels for each stage (seeds, scheduled, fetched, parsed, discovered).
   - A `Schedular` instance deduplicates URLs and forwards unique items.
-  - A pool of fetch workers (size controlled by `WithWorkerCount`) pulls from the scheduled channel and writes to the fetched channel.
+  - Each `Item` carries the chosen **use case**, allowing workers and stores to log or adapt behavior per mode.
+  - A pool of fetch workers (size controlled by `WithWorkerCount`) pulls from the scheduled channel and writes to the fetched channel, respecting per-domain rate limiting.
   - Downstream stages conceptually process items in sequence: discover → fetch → filter → parse → store, with limiting where appropriate and depth bounded by `maxDepth`.
 - **Outputs**
   - Discovered items and any stored results (the storage format/destination is not yet implemented).

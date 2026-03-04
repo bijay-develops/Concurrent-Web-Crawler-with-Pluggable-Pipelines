@@ -9,19 +9,25 @@
 - Relative path (from repo root): `crawler/internal/crawler/crawler.go`
 
 ## 3. Key Components
-- `type Crawler struct { workers int; maxDepth int }`
+- `type Crawler struct { workers int; maxDepth int; seedURL string; mode shared.UseCase }`
 	- Holds crawler configuration:
 	  - `workers`: number of concurrent fetch workers.
 	  - `maxDepth`: maximum crawl depth from the initial seed URLs.
+	  - `seedURL`: starting URL for the crawl.
+	  - `mode`: selected high-level use case (Track Blogs, Site Health, Search Index).
 - `type Option func(*Crawler)`
 	- Functional option type used to configure a `Crawler` at construction time.
 - `func WithWorkerCount(n int) Option`
 	- Configures the number of concurrent workers.
-- `func WithMaxDepth(d int) Option`
+-- `func WithMaxDepth(d int) Option`
 	- Configures the maximum crawl depth.
-- `func New(opts ...Option) *Crawler`
+- `func WithSeedURL(u string) Option`
+	- Configures the starting seed URL.
+- `func WithUseCase(mode shared.UseCase) Option`
+	- Configures the high-level use case that flows into items and workers.
+-- `func New(opts ...Option) *Crawler`
 	- Constructor that applies options to a `Crawler`.
-	- Defaults: `workers = 4`, `maxDepth = 1` if not overridden.
+	- Defaults: `workers = 4`, `maxDepth = 1`, `seedURL = "https://example.com"`, `mode = UseCaseTrackBlogs` if not overridden.
 - `func (c *Crawler) Run(ctx context.Context) error`
 	- Validates configuration (`workers` must be > 0).
 	- Constructs channels for each stage: `seeds`, `scheduled`, `fetched`, `parsed`, `discovered`.
@@ -30,7 +36,8 @@
 	- Starts a pool of fetch workers.
 	- Starts parse and discover workers and wires them with channels.
 	- Uses a `WorkTracker` to know when all work is done and trigger cancellation.
-	- Seeds the crawl with a hard-coded `https://example.com` URL at depth 0.
+	- Parses and normalizes the configured seed URL.
+	- Seeds the crawl with that URL and depth 0, attaching the configured `mode` to the initial `Item`.
 	- Blocks on `<-ctx.Done()` and returns `ctx.Err()`.
 
 ## 4. Execution Flow

@@ -1,25 +1,38 @@
 # Architecture
 
 ## Overview
-- Entry point: Go CLI in `crawler/cmd/crawler/main.go`.
+- Entry points:
+  - Go CLI in `crawler/cmd/crawler/main.go`.
+  - Web UI in `crawler/cmd/webui/main.go`.
 - Core crawler orchestration lives under `crawler/internal/crawler/`.
 - Pluggable pipeline stages and infrastructure live under `crawler/internal/pipeline/`.
+- Shared types (including the high-level use-case / mode) live under `crawler/internal/shared/`.
 
 ## Modules
 - `cmd/crawler/main.go`
   - Sets up process context and signal handling.
-  - Constructs a `Crawler` via functional options (e.g., worker count, max depth) and starts it.
+  - Parses flags for worker count, max depth, seed URL, and a **mode** flag that selects one of three high-level use cases:
+    - Track my favourite blogs
+    - Internal Site Health Checker
+    - Data Pipeline Search Index
+  - Constructs a `Crawler` via functional options and starts it.
+- `cmd/webui/main.go`
+  - Serves a small HTML form for launching crawls from the browser.
+  - Lets the user configure URL, workers, depth, and the same three modes via radio buttons.
 - `internal/crawler/`
   - Defines the main crawler type (`Crawler`) and its orchestration logic.
-  - Provides `New`, `WithWorkerCount`, and `WithMaxDepth` as referenced from `main.go`.
-  - Contains supporting types like `Item`, `Schedular`, and `WorkTracker`.
+  - Provides options like `WithWorkerCount`, `WithMaxDepth`, `WithSeedURL`, and `WithUseCase` as referenced from the entrypoints.
+  - Contains supporting types like `Schedular` and `WorkTracker`.
+- `internal/shared/`
+  - Defines shared data structures such as `Item`, which now carries the selected **use case** (`UseCaseTrackBlogs`, `UseCaseSiteHealth`, `UseCaseSearchIndex`).
 - `internal/pipeline/`
   - Hosts pluggable pipeline stages (`discover`, `fetch`, `filter`, `parse`, `store`) and related infrastructure (`interfaces`, `limiter`).
   - The current implementation focuses on wiring and rate-limiting primitives; most stage files are skeletal and document future responsibilities.
 
 ## High-Level Interactions
-- The CLI entrypoint configures and starts the crawler through the internal package API.
+- The CLI and Web UI entrypoints configure and start the crawler through the internal package API.
 - The core crawler coordinates scheduling of crawl work, concurrency, and interaction with pipeline stages.
+- A selected **mode** flows from the entrypoint into `internal/shared.Item` values and can be used by stages (such as fetch or store) to log or behave differently for each use case.
 - Conceptually, pipeline stages process crawl items in sequence (e.g., discover → fetch → filter → parse → store), with optional limiting; concrete logic is still being built out.
 
 ## Mermaid System Diagram

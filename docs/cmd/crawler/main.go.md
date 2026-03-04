@@ -3,7 +3,7 @@
 ## 1. Overview
 - Purpose: Provide the CLI entrypoint for the crawler application.
 - Problem it solves: Starts the crawler, sets up graceful shutdown via context cancellation and OS signal handling.
-- High-level responsibility: Wire up configuration, create the crawler instance, run it, and handle termination.
+- High-level responsibility: Parse flags (workers, depth, URL, and mode), create the crawler instance, run it, and handle termination.
 
 ## 2. File Location
 - Relative path (from repo root): `crawler/cmd/crawler/main.go`
@@ -17,10 +17,17 @@
   - Channel and subscription used to listen for termination signals (Ctrl+C, system shutdown).
 - Goroutine reading from `sig`
   - Logs a shutdown message and invokes `cancel()` to propagate shutdown via the context.
-- `crawler.New(crawler.WithWorkerCount(8), crawler.WithMaxDepth(3))`
+  - Command-line flags:
+    - `-workers` (int): number of concurrent worker goroutines.
+    - `-depth` (int): maximum crawl depth.
+    - `-url` (string): seed URL to start crawling from.
+    - `-mode` (string/int): high-level use case for the crawl (`1`/`blogs`, `2`/`health`, `3`/`search`).
+- `crawler.New(...)`
   - Uses functional options from `internal/crawler` to configure the crawler instance.
-  - `WithWorkerCount(8)` sets the number of concurrent fetch workers.
-  - `WithMaxDepth(3)` bounds the crawl depth from the initial seeds.
+  - `WithWorkerCount` sets the number of concurrent fetch workers.
+  - `WithMaxDepth` bounds the crawl depth from the initial seeds.
+  - `WithSeedURL` injects the user-provided URL.
+  - `WithUseCase` injects the selected use case into the crawler so it can flow into items and workers.
 - `c.Run(ctx)`
   - Starts the crawler using the provided context; returns an error when the context is canceled or if it aborts early.
 

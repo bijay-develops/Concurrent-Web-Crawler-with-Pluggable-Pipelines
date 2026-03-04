@@ -46,7 +46,8 @@ cd crawler
 go run ./cmd/crawler \
   -url="https://example.com" \
   -workers=8 \
-  -depth=2
+  -depth=2 \
+  -mode=1
 ```
 
 Flags:
@@ -55,6 +56,10 @@ Flags:
   - If you omit the scheme, the crawler assumes `https://`.
 - `-workers` – number of concurrent workers (default `8`).
 - `-depth` – maximum crawl depth from the seed (default `2`).
+ - `-mode` – high-level use case. You can pass:
+   - `1` or `blogs` – Track my favourite blogs.
+   - `2` or `health` – Internal Site Health Checker.
+   - `3` or `search` – Data Pipeline Search Index.
 
 Stop the crawler at any time with `Ctrl + C`. The log may show `context canceled` on shutdown; this is a normal, clean exit.
 
@@ -78,6 +83,10 @@ In the page you can:
 
 - Enter a seed URL or domain (for example `https://google.com` or `chatgpt.com`).
 - Set `Workers` and `Max depth`.
+- Choose one of three **Use case** options:
+  1. Track my favourite blogs
+  2. Internal Site Health Checker
+  3. Data Pipeline Search Index
 - Click **Start crawl**.
 
 The result panel will show:
