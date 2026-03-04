@@ -137,7 +137,7 @@ func parseUseCase(mode string) shared.UseCase {
 	}
 }
 
-func buildSummary(useCase shared.UseCase, s shared.CrawlStats) string {
+func buildSummary(useCase shared.UseCase, s shared.CrawlStatsView) string {
 	if s.TotalRequests == 0 {
 		return "No requests were made. The URL might have been invalid or the crawl was stopped immediately."
 	}

@@ -56,6 +56,20 @@ type CrawlStats struct {
 	LastURL        string
 }
 
+// CrawlStatsView is an immutable, lock-free snapshot of CrawlStats
+// intended for read-only reporting and UI rendering.
+type CrawlStatsView struct {
+	TotalRequests  int
+	Success2xx     int
+	ClientError4xx int
+	ServerError5xx int
+	OtherStatus    int
+	NetworkErrors  int
+
+	LastStatusCode int
+	LastURL        string
+}
+
 // RecordSuccess updates stats for a successful HTTP response.
 func (s *CrawlStats) RecordSuccess(url string, status int) {
 	if s == nil {
@@ -92,15 +106,15 @@ func (s *CrawlStats) RecordNetworkError() {
 	s.NetworkErrors++
 }
 
-// Snapshot returns a copy of the stats for read-only use.
-func (s *CrawlStats) Snapshot() CrawlStats {
+// Snapshot returns a lock-free copy of the stats for read-only use.
+func (s *CrawlStats) Snapshot() CrawlStatsView {
 	if s == nil {
-		return CrawlStats{}
+		return CrawlStatsView{}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return CrawlStats{
+	return CrawlStatsView{
 		TotalRequests:  s.TotalRequests,
 		Success2xx:     s.Success2xx,
 		ClientError4xx: s.ClientError4xx,
