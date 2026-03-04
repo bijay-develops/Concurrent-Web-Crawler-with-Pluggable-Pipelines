@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -29,9 +30,10 @@ func ParseWorker(
 				item.Response.Body.Close()
 				item.Response = nil
 				if err == nil && len(body) > 0 {
-					title, wordCount, internalLinks, externalLinks := extractPageMetrics(item.URL, body)
+					title, wordCount, internalLinks, externalLinks, keywords := extractPageMetrics(item.URL, body)
 					if stats != nil {
 						stats.RecordPageMetrics(item.URL.String(), title, wordCount, internalLinks, externalLinks)
+						stats.RecordTopics(title, keywords)
 					}
 				}
 			}
@@ -46,8 +48,8 @@ func ParseWorker(
 }
 
 // extractPageMetrics performs very lightweight HTML scraping to provide
-// user-friendly analytics without external dependencies.
-func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount, internalLinks, externalLinks int) {
+// user-friendly analytics and keyword hints without external dependencies.
+func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount, internalLinks, externalLinks int, keywords []string) {
 	// Work on a lowercase copy for tag/attribute searches.
 	lower := strings.ToLower(string(body))
 
@@ -65,16 +67,18 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 		}
 	}
 
-	// 2. Rough word count: strip tags and count fields.
+	// 2. Rough word count and per-page keyword candidates.
 	noTags := stripHTMLTags(lower)
 	if noTags != "" {
-		wordCount = len(strings.Fields(noTags))
+		words := strings.Fields(noTags)
+		wordCount = len(words)
+		keywords = topKeywords(words, 5)
 	}
 
 	// 3. Link counts: count internal vs external <a href="..."> links.
 	internalLinks, externalLinks = countLinks(pageURL, lower)
 
-	return title, wordCount, internalLinks, externalLinks
+	return title, wordCount, internalLinks, externalLinks, keywords
 }
 
 var tagRegexp = regexp.MustCompile(`<[^>]+>`)
@@ -86,6 +90,57 @@ func stripHTMLTags(s string) string {
 	// Collapse whitespace.
 	clean = strings.Join(strings.Fields(clean), " ")
 	return clean
+}
+
+// Basic English stopwords to avoid boring topics.
+var stopwords = map[string]struct{}{
+	"the": {}, "and": {}, "for": {}, "with": {}, "that": {}, "this": {}, "you": {}, "your": {}, "are": {}, "was": {}, "were": {}, "from": {}, "have": {}, "has": {}, "had": {}, "but": {}, "his": {}, "her": {}, "she": {}, "him": {}, "our": {}, "their": {}, "they": {}, "them": {}, "not": {}, "just": {}, "about": {}, "into": {}, "when": {}, "what": {}, "how": {}, "why": {}, "can": {}, "will": {}, "would": {}, "could": {}, "should": {}, "on": {}, "in": {}, "to": {}, "of": {}, "at": {}, "as": {}, "it": {}, "is": {}, "a": {}, "an": {},
+}
+
+func topKeywords(words []string, limit int) []string {
+	if len(words) == 0 || limit <= 0 {
+		return nil
+	}
+	counts := make(map[string]int)
+	for _, w := range words {
+		w = strings.Trim(w, " ,.!?:;\"'()[]{}<>")
+		if w == "" {
+			continue
+		}
+		lw := strings.ToLower(w)
+		if len(lw) < 4 { // skip very short words
+			continue
+		}
+		if _, skip := stopwords[lw]; skip {
+			continue
+		}
+		counts[lw]++
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	type pair struct {
+		k string
+		c int
+	}
+	items := make([]pair, 0, len(counts))
+	for k, c := range counts {
+		items = append(items, pair{k: k, c: c})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].c == items[j].c {
+			return items[i].k < items[j].k
+		}
+		return items[i].c > items[j].c
+	})
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.k)
+	}
+	return out
 }
 
 func countLinks(pageURL *url.URL, lowerHTML string) (internalLinks, externalLinks int) {

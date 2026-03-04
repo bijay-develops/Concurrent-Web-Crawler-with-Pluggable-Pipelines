@@ -205,6 +205,21 @@ var pageTmpl = template.Must(template.New("index").Parse(`<!DOCTYPE html>
 					}
 					html += '</ul>';
 
+					// Topics / themes derived from pages
+					if (Array.isArray(summary.topTopics) && summary.topTopics.length > 0) {
+						html += '<p><strong>Top themes / topics</strong></p>';
+						html += '<ul>';
+						summary.topTopics.forEach(function(t) {
+							if (!t || !t.keyword) return;
+							let line = t.keyword + ' (' + (t.count || 0) + ' page(s))';
+							if (Array.isArray(t.exampleTitles) && t.exampleTitles.length > 0) {
+								line += ' – e.g. ' + t.exampleTitles.join('; ');
+							}
+							html += '<li>' + line + '</li>';
+						});
+						html += '</ul>';
+					}
+
 					resultBox.innerHTML = html;
 				} catch (err) {
 					if (resultBox) {

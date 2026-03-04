@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"sync"
 )
 
@@ -64,6 +65,10 @@ type CrawlStats struct {
 	LongestPageWordCount int
 	LongestPageURL       string
 	LongestPageTitle     string
+
+	// Lightweight topic aggregation across parsed pages.
+	topicCounts   map[string]int
+	topicExamples map[string][]string
 }
 
 // CrawlStatsView is an immutable, lock-free snapshot of CrawlStats
@@ -86,6 +91,15 @@ type CrawlStatsView struct {
 	LongestPageWordCount int    `json:"longestPageWordCount"`
 	LongestPageURL       string `json:"longestPageUrl"`
 	LongestPageTitle     string `json:"longestPageTitle"`
+
+	Topics []TopicSummary `json:"topics"`
+}
+
+// TopicSummary represents a simple theme/keyword discovered during a crawl.
+type TopicSummary struct {
+	Keyword       string   `json:"keyword"`
+	Count         int      `json:"count"`
+	ExampleTitles []string `json:"exampleTitles"`
 }
 
 // ModeSummary is a small, user-friendly interpretation of stats for a
@@ -102,10 +116,11 @@ type ModeSummary struct {
 	RawStats      CrawlStatsView `json:"rawStats"`
 
 	// Extra analytics derived from RawStats for convenience in UIs.
-	AverageWordsPerPage  int    `json:"averageWordsPerPage"`
-	LongestPageURL       string `json:"longestPageUrl"`
-	LongestPageTitle     string `json:"longestPageTitle"`
-	LongestPageWordCount int    `json:"longestPageWordCount"`
+	AverageWordsPerPage  int            `json:"averageWordsPerPage"`
+	LongestPageURL       string         `json:"longestPageUrl"`
+	LongestPageTitle     string         `json:"longestPageTitle"`
+	LongestPageWordCount int            `json:"longestPageWordCount"`
+	TopTopics            []TopicSummary `json:"topTopics"`
 }
 
 // RecordSuccess updates stats for a successful HTTP response.
@@ -171,6 +186,37 @@ func (s *CrawlStats) RecordPageMetrics(url, title string, wordCount, internalLin
 	}
 }
 
+// RecordTopics aggregates per-page keywords into crawl-level topic stats.
+// It is safe for concurrent use.
+func (s *CrawlStats) RecordTopics(title string, keywords []string) {
+	if s == nil || len(keywords) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.topicCounts == nil {
+		s.topicCounts = make(map[string]int)
+	}
+	if s.topicExamples == nil {
+		s.topicExamples = make(map[string][]string)
+	}
+
+	for _, k := range keywords {
+		if k == "" {
+			continue
+		}
+		s.topicCounts[k]++
+		// Keep up to 3 example titles per keyword for UI display.
+		if title != "" {
+			examples := s.topicExamples[k]
+			if len(examples) < 3 {
+				s.topicExamples[k] = append(examples, title)
+			}
+		}
+	}
+}
+
 // Snapshot returns a lock-free copy of the stats for read-only use.
 func (s *CrawlStats) Snapshot() CrawlStatsView {
 	if s == nil {
@@ -179,7 +225,7 @@ func (s *CrawlStats) Snapshot() CrawlStatsView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return CrawlStatsView{
+	view := CrawlStatsView{
 		TotalRequests:        s.TotalRequests,
 		Success2xx:           s.Success2xx,
 		ClientError4xx:       s.ClientError4xx,
@@ -196,6 +242,13 @@ func (s *CrawlStats) Snapshot() CrawlStatsView {
 		LongestPageURL:       s.LongestPageURL,
 		LongestPageTitle:     s.LongestPageTitle,
 	}
+
+	// Derive a small, sorted list of top topics for reporting.
+	if len(s.topicCounts) > 0 {
+		view.Topics = TopTopicsFromMaps(s.topicCounts, s.topicExamples, 10)
+	}
+
+	return view
 }
 
 // SummarizeMode converts raw stats into a simple, human-readable
@@ -320,5 +373,42 @@ func SummarizeMode(mode UseCase, v CrawlStatsView) ModeSummary {
 		LongestPageURL:       v.LongestPageURL,
 		LongestPageTitle:     v.LongestPageTitle,
 		LongestPageWordCount: v.LongestPageWordCount,
+		TopTopics:            v.Topics,
 	}
+}
+
+// TopTopicsFromMaps converts raw keyword counts and examples into a sorted
+// slice of TopicSummary limited to topN entries.
+func TopTopicsFromMaps(counts map[string]int, examples map[string][]string, topN int) []TopicSummary {
+	if len(counts) == 0 || topN <= 0 {
+		return nil
+	}
+	type pair struct {
+		k string
+		c int
+	}
+	items := make([]pair, 0, len(counts))
+	for k, c := range counts {
+		items = append(items, pair{k: k, c: c})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].c == items[j].c {
+			return items[i].k < items[j].k
+		}
+		return items[i].c > items[j].c
+	})
+
+	if len(items) > topN {
+		items = items[:topN]
+	}
+
+	out := make([]TopicSummary, 0, len(items))
+	for _, it := range items {
+		out = append(out, TopicSummary{
+			Keyword:       it.k,
+			Count:         it.c,
+			ExampleTitles: examples[it.k],
+		})
+	}
+	return out
 }
