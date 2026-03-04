@@ -9,17 +9,23 @@ Concurrent-Web-Crawler-with-Pluggable-Pipelines/
   crawler/         # Go module (CLI + Web UI + internal packages)
     cmd/
       crawler/     # CLI entrypoint
-      webui/       # Web UI entrypoint
+      webui/       # Web UI entrypoint (also hosts JSON API)
+      api/         # Standalone JSON API entrypoint
     internal/
       crawler/     # Core crawler orchestration
       pipeline/    # Pluggable pipeline stages and rate limiting
-      shared/      # Shared types such as Item and UseCase
+      shared/      # Shared types such as Item, UseCase, CrawlStats, ModeSummary
+      service/     # CrawlService abstraction over the core crawler
+      httpapi/     # HTTP handlers exposing the JSON API
+      store/       # File-backed persistence for crawl summaries
   docs/            # This documentation tree
   manual/          # How to build and run the project
   WHY_the_PROJECT/ # High-level motivation and use-case explanations
   Problems-and-Solutions/
   QnA/
   code_fixing/
+  .github/workflows/  # CI configuration for build + tests
+  docker-compose.yml  # Compose file to run Web UI and API in containers
 ```
 
 ## Index
@@ -28,6 +34,12 @@ Concurrent-Web-Crawler-with-Pluggable-Pipelines/
 
 - [ARCHITECTURE](ARCHITECTURE.md) – overall system structure and module interactions.
 - [DATA_FLOW](DATA_FLOW.md) – conceptual end-to-end data flow and pipeline stages.
+  
+### Service, API, and Persistence
+
+- `internal/service` – describes the `CrawlService` used by HTTP handlers and other integrations.
+- `internal/httpapi` – documents the JSON API endpoints (for example `POST /api/crawls`, `GET /api/crawls/history`).
+- `internal/store` – explains how crawl summaries are written to and read from `data/crawls.jsonl`.
 
 ### Source File Docs
 
