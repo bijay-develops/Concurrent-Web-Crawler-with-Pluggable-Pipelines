@@ -54,9 +54,9 @@ func (c *Crawler) Run(ctx context.Context) error {
 		return errors.New("worker count must be > 0")
 	}
 
-	seedURL, err := url.Parse(c.seedURL)
+	seedURL, err := parseSeedURL(c.seedURL)
 	if err != nil {
-		return fmt.Errorf("invalid seed URL %q: %w", c.seedURL, err)
+		return err
 	}
 
 	tracker := &shared.WorkTracker{}
@@ -107,4 +107,25 @@ func (c *Crawler) Run(ctx context.Context) error {
 
 	<-ctx.Done()
 	return ctx.Err()
+}
+
+func parseSeedURL(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid seed URL %q: %w", raw, err)
+	}
+
+	// If the user passed something like "facebook.com", assume https.
+	if parsed.Scheme == "" {
+		parsed, err = url.Parse("https://" + raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid seed URL %q after adding https://: %w", raw, err)
+		}
+	}
+
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("seed URL %q must include a host", raw)
+	}
+
+	return parsed, nil
 }
