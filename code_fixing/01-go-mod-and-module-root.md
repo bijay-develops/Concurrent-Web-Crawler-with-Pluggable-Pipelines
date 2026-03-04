@@ -59,3 +59,8 @@ So any module-aware commands (`go run`, `go test`, `go build`, `go mod tidy`, et
   - In the correct subdirectory, and
   - That `go.mod` is actually present there.
 - In this project, always run Go tooling from the `crawler/` directory (or below), not from the repository root.
+
+This note describes an early setup issue and its fix. For the current, higher-level view of the system (including the JSON API and how to use the crawler from other applications), see:
+
+- [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)
+- [Developer's_Manual/README.md](../Developer's_Manual/README.md)

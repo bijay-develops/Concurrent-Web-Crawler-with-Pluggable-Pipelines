@@ -46,6 +46,8 @@ Check /api/status
 
 ➡ Concurrent crawler = faster alerts
 
+In this project, the **Site Health** mode and the JSON API (`POST /api/crawls`) already give you simple health summaries (`isHealthy`, `stats`, `summary.message`) that you can plug into dashboards or CI checks.
+
 ---
 
 ## 3. Web Scraping 🕷️
@@ -131,5 +133,7 @@ Static site generators
 ### One-Line Comparison
 
 > A concurrent crawler overlaps network waits and controls shared state, while a single-threaded crawler wastes time waiting and cannot scale.
+
+For integration ideas (for example, using the crawler as a microservice behind Next.js or persisting results into Postgres/MySQL/MongoDB), see [Developer's_Manual/README.md](Developer's_Manual/README.md).
 
 --- 

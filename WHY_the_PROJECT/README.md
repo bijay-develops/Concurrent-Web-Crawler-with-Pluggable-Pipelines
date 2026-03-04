@@ -10,6 +10,7 @@ We will cover:
 4. Applications (layman style and professional style)
 5. Uses of the project
 6. Concrete real‑life examples
+7. How developers can plug this crawler into their own stacks
 
 Along the way, you will see simple diagrams and real‑world comparisons.
 
@@ -115,7 +116,10 @@ This project is a good choice if you care about:
 1. **Separation of concerns and clean package layout**
    - Crawler orchestration lives in `internal/crawler`.
    - Pipeline stages and infrastructure live in `internal/pipeline`.
-   - Entry points live in `cmd/crawler` (CLI) and `cmd/webui` (Web UI).
+   - Shared types and stats (including modes and summaries) live in `internal/shared`.
+   - A service layer (`internal/service`) exposes a simple API used by HTTP handlers.
+   - HTTP handlers (`internal/httpapi`) provide a JSON API for other apps.
+   - Entry points live in `cmd/crawler` (CLI), `cmd/webui` (Web UI + API), and `cmd/api` (API only).
 
 2. **Structured concurrency and backpressure**
    - Worker pools, channels, and a scheduler (`Schedular`) control how many URLs are in flight.
@@ -173,6 +177,8 @@ The code under `internal/crawler` and `internal/pipeline` demonstrates:
 - Clear flow of data (seed → scheduler → workers → stages → outputs)
 
 It’s not only about "crawling web pages"; it’s about **learning how to design robust concurrent systems**.
+
+For practical integration patterns with stacks like Next.js + Node.js + Postgres/MySQL/MongoDB, see the developer-focused guide in [Developer's_Manual/README.md](Developer's_Manual/README.md).
 
 ---
 

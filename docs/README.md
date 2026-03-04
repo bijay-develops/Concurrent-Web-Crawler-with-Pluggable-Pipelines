@@ -41,6 +41,11 @@ Concurrent-Web-Crawler-with-Pluggable-Pipelines/
 - `internal/httpapi` – documents the JSON API endpoints (for example `POST /api/crawls`, `GET /api/crawls/history`).
 - `internal/store` – explains how crawl summaries are written to and read from `data/crawls.jsonl`.
 
+### Higher-Level Guides
+
+- [WHY_the_PROJECT/README.md](../WHY_the_PROJECT/README.md) – motivation, problems solved, and beginner/advanced perspectives.
+- [Developer's_Manual/README.md](../Developer's_Manual/README.md) – how to use the crawler as a service from stacks like Next.js + Node.js + Postgres/MySQL/MongoDB.
+
 ### Source File Docs
 
 - [go.mod](go.mod.md)
