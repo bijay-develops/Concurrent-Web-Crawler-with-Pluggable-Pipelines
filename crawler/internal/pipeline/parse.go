@@ -99,10 +99,32 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 	seenDiscovered := make(map[string]struct{})
 	discovered = nil
 
+	// Prefer post links found in <article> cards on listing pages.
+	// This keeps discovery focused on real content and avoids scheduling
+	// tag/author/meta links that often appear inside article cards.
+	const maxDiscoveredPerPage = 150
+	preferredLinks, preferredSet := extractPreferredArticleLinks(pageURL, contentRoot, maxDiscoveredPerPage)
+	articleCardMode := len(preferredLinks) > 0
+	for _, p := range preferredLinks {
+		if p == "" {
+			continue
+		}
+		if _, ok := seenDiscovered[p]; ok {
+			continue
+		}
+		seenDiscovered[p] = struct{}{}
+		discovered = append(discovered, p)
+		if len(discovered) >= maxDiscoveredPerPage {
+			break
+		}
+	}
+
+	stopWalk := false
+
 	// Walk the DOM once, collecting visible text and link hrefs.
 	var visit func(n *html.Node)
 	visit = func(n *html.Node) {
-		if n == nil {
+		if n == nil || stopWalk {
 			return
 		}
 		if n.Type == html.ElementNode {
@@ -114,34 +136,43 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 			case "a":
 				if pageURL != nil {
 					for _, attr := range n.Attr {
-						if strings.EqualFold(attr.Key, "href") {
-							link := strings.TrimSpace(attr.Val)
-							if link == "" || strings.HasPrefix(link, "#") || strings.HasPrefix(link, "javascript:") {
-								continue
-							}
-							u, err := url.Parse(link)
-							if err != nil {
-								continue
-							}
-							if !u.IsAbs() {
-								u = pageURL.ResolveReference(u)
-							}
-							if equalHosts(u.Host, pageURL.Host) {
-								internalLinks++
-								// Track internal links for discovery.
-								if shouldDiscoverURL(pageURL, u) {
-									key := u.String()
-									if _, ok := seenDiscovered[key]; !ok {
-										seenDiscovered[key] = struct{}{}
-										discovered = append(discovered, key)
-										if len(discovered) >= 150 {
-											return
-										}
+						if !strings.EqualFold(attr.Key, "href") {
+							continue
+						}
+						link := strings.TrimSpace(attr.Val)
+						if link == "" || strings.HasPrefix(link, "#") || strings.HasPrefix(strings.ToLower(link), "javascript:") {
+							continue
+						}
+						u, err := url.Parse(link)
+						if err != nil || u == nil {
+							continue
+						}
+						if !u.IsAbs() {
+							u = pageURL.ResolveReference(u)
+						}
+						if equalHosts(u.Host, pageURL.Host) {
+							internalLinks++
+							if shouldDiscoverURL(pageURL, u) {
+								key := u.String()
+								// If this anchor is inside an <article> card on a listing page,
+								// only discover it when it is one of our preferred per-article
+								// permalinks. This avoids tag/author/meta links within cards.
+								if articleCardMode && hasAncestorTag(n, "article") {
+									if _, ok := preferredSet[key]; !ok {
+										continue
 									}
 								}
-							} else {
-								externalLinks++
+								if _, ok := seenDiscovered[key]; !ok {
+									seenDiscovered[key] = struct{}{}
+									discovered = append(discovered, key)
+									if len(discovered) >= maxDiscoveredPerPage {
+										stopWalk = true
+										return
+									}
+								}
 							}
+						} else {
+							externalLinks++
 						}
 					}
 				}
@@ -155,6 +186,9 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			visit(c)
+			if stopWalk {
+				return
+			}
 		}
 	}
 	visit(contentRoot)
@@ -168,6 +202,173 @@ func extractPageMetrics(pageURL *url.URL, body []byte) (title string, wordCount,
 	}
 
 	return title, wordCount, internalLinks, externalLinks, keywords, discovered
+}
+
+func extractPreferredArticleLinks(pageURL *url.URL, root *html.Node, limit int) (links []string, preferredSet map[string]struct{}) {
+	preferredSet = make(map[string]struct{})
+	if pageURL == nil || root == nil || limit <= 0 {
+		return nil, preferredSet
+	}
+
+	articles := findElementsByTag(root, "article", 80)
+	// If there's only one <article>, it's usually a single post page.
+	// In that case we should NOT treat it as a listing page.
+	if len(articles) < 2 {
+		return nil, preferredSet
+	}
+
+	for _, art := range articles {
+		if len(links) >= limit {
+			break
+		}
+		bestURL := ""
+		bestScore := -1
+		anchorsSeen := 0
+		stop := false
+
+		var walk func(*html.Node)
+		walk = func(n *html.Node) {
+			if n == nil || stop {
+				return
+			}
+			if n.Type == html.ElementNode && strings.EqualFold(n.Data, "a") {
+				anchorsSeen++
+				if anchorsSeen > 80 {
+					stop = true
+					return
+				}
+				href := attrValue(n, "href")
+				href = strings.TrimSpace(href)
+				if href == "" || strings.HasPrefix(href, "#") || strings.HasPrefix(strings.ToLower(href), "javascript:") {
+					// ignore
+				} else {
+					u, err := url.Parse(href)
+					if err == nil && u != nil {
+						if !u.IsAbs() {
+							u = pageURL.ResolveReference(u)
+						}
+						if equalHosts(u.Host, pageURL.Host) && shouldDiscoverURL(pageURL, u) {
+							key := u.String()
+							score := scoreArticleAnchor(n)
+							// Small preference toward longer, more specific paths.
+							score += strings.Count(strings.Trim(u.Path, "/"), "/")
+							if score > bestScore {
+								bestScore = score
+								bestURL = key
+							}
+						}
+					}
+				}
+			}
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+				if stop {
+					return
+				}
+			}
+		}
+		walk(art)
+
+		if bestURL == "" {
+			continue
+		}
+		if _, ok := preferredSet[bestURL]; ok {
+			continue
+		}
+		preferredSet[bestURL] = struct{}{}
+		links = append(links, bestURL)
+	}
+
+	return links, preferredSet
+}
+
+func findElementsByTag(root *html.Node, tag string, limit int) []*html.Node {
+	if root == nil || tag == "" || limit <= 0 {
+		return nil
+	}
+	out := make([]*html.Node, 0, 8)
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n == nil || len(out) >= limit {
+			return
+		}
+		if n.Type == html.ElementNode && strings.EqualFold(n.Data, tag) {
+			out = append(out, n)
+			if len(out) >= limit {
+				return
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+			if len(out) >= limit {
+				return
+			}
+		}
+	}
+	walk(root)
+	return out
+}
+
+func hasAncestorTag(n *html.Node, tag string) bool {
+	if n == nil || tag == "" {
+		return false
+	}
+	for p := n.Parent; p != nil; p = p.Parent {
+		if p.Type == html.ElementNode && strings.EqualFold(p.Data, tag) {
+			return true
+		}
+	}
+	return false
+}
+
+func attrValue(n *html.Node, key string) string {
+	if n == nil || key == "" {
+		return ""
+	}
+	for _, a := range n.Attr {
+		if strings.EqualFold(a.Key, key) {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+func scoreArticleAnchor(a *html.Node) int {
+	if a == nil {
+		return 0
+	}
+	score := 0
+	// Prefer heading links: <h2><a href=...>Title</a></h2>
+	for p := a.Parent; p != nil; p = p.Parent {
+		if p.Type != html.ElementNode {
+			continue
+		}
+		name := strings.ToLower(p.Data)
+		if name == "h1" || name == "h2" || name == "h3" {
+			score += 60
+			break
+		}
+		if name == "article" {
+			break
+		}
+	}
+
+	if rel := strings.ToLower(attrValue(a, "rel")); rel != "" {
+		if strings.Contains(rel, "bookmark") {
+			score += 30
+		}
+	}
+	class := strings.ToLower(attrValue(a, "class"))
+	id := strings.ToLower(attrValue(a, "id"))
+	if strings.Contains(class, "entry-title") || strings.Contains(class, "post-title") || strings.Contains(id, "entry-title") || strings.Contains(id, "post-title") {
+		score += 20
+	}
+
+	// Mild bump for non-trivial anchor text.
+	if t := strings.TrimSpace(collectText(a)); len(t) >= 12 {
+		score += 10
+	}
+	return score
 }
 
 // shouldDiscoverURL decides whether an internal link should be scheduled
